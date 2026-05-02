@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ASALO Logistic — Dashboard</title>
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    html, body, #root { width: 100%; height: 100%; }
+    /* design canvas hosting */
+    .frame { width: 100%; height: 100%; overflow: hidden; }
+    .frame.desktop { background: var(--bg-0); }
+    .ios-mock {
+      width: 360px; height: 740px; margin: 0 auto;
+      border-radius: 36px; background: var(--bg-0);
+      border: 1px solid var(--line-2);
+      overflow: hidden; box-shadow: 0 30px 80px rgba(0,0,0,0.5);
+      position: relative;
+    }
+    .ios-mock::before {
+      content: ""; position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+      width: 110px; height: 28px; background: #000; border-radius: 16px; z-index: 10;
+    }
+  </style>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- Order matters: data → primitives → tweaks-panel → shell → screens → app -->
+  <script type="text/babel" src="data.jsx"></script>
+  <script type="text/babel" src="primitives.jsx"></script>
+  <script type="text/babel" src="tweaks-panel.jsx"></script>
+  <script type="text/babel" src="design-canvas.jsx"></script>
+  <script type="text/babel" src="shell.jsx"></script>
+  <script type="text/babel" src="orders.jsx"></script>
+  <script type="text/babel" src="screens.jsx"></script>
+  <script type="text/babel" src="app.jsx"></script>
+
+  <script type="text/babel">
+    function Root() {
+      return (
+        <DesignCanvas initialZoom={0.7}>
+          <DCSection id="dashboard" title="ASALO Logistic — Operations Dashboard">
+            <DCArtboard id="main" label="Dashboard · 1440 × 900 · Interactive (click an order, advance status to fire SMS)" width={1440} height={900}>
+              <div className="frame desktop"><App /></div>
+            </DCArtboard>
+          </DCSection>
+
+          <DCSection id="mobile" title="Driver companion · iOS">
+            <DCArtboard id="driver" label="Driver app · today's run + mark delivered" width={400} height={780}>
+              <div style={{ padding: 20, height: "100%", background: "var(--bg-0)" }}>
+                <div className="ios-mock"><MobileDriver /></div>
+              </div>
+            </DCArtboard>
+          </DCSection>
+        </DesignCanvas>
+      );
+    }
+    ReactDOM.createRoot(document.getElementById("root")).render(<Root />);
+  </script>
+</body>
+</html>

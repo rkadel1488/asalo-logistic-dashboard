@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "asalo-dashboard",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["serve", "-p", "3333", "/Users/dps/Documents/Asalo Claude  Design"],
+      "port": 3333
+    }
+  ]
+}
