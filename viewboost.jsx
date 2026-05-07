@@ -245,14 +245,202 @@ function EarnTab({ points, setPoints, videoIndex, setVideoIndex, timeLeft, setTi
   );
 }
 
+// ── CampaignCard Component ────────────────────────────────────────────────────────
+
+function CampaignCard({ campaign }) {
+  const pct = Math.round((campaign.delivered / campaign.target) * 100);
+
+  return (
+    <div style={{
+      background: "#1a1a2e",
+      border: "1px solid #ffffff10",
+      borderRadius: 12,
+      padding: "16px 20px",
+      display: "flex",
+      flexDirection: "column",
+      gap: 10,
+    }}>
+      {/* Title + URL row */}
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 14 }}>{campaign.title}</div>
+          <a
+            href={campaign.url}
+            target="_blank"
+            rel="noreferrer"
+            style={{ color: "#94a3b8", fontSize: 12, textDecoration: "none", display: "flex", alignItems: "center", gap: 4, marginTop: 2 }}
+          >
+            <ExternalLink size={10} />
+            {campaign.url.length > 48 ? campaign.url.slice(0, 48) + "…" : campaign.url}
+          </a>
+        </div>
+        <span style={{
+          background: pct >= 100 ? "#16a34a20" : "#a855f720",
+          color:      pct >= 100 ? "#4ade80"   : "#a855f7",
+          border:     `1px solid ${pct >= 100 ? "#4ade8040" : "#a855f740"}`,
+          borderRadius: 999,
+          padding: "2px 10px",
+          fontSize: 12,
+          fontWeight: 700,
+          whiteSpace: "nowrap",
+        }}>
+          {pct}%
+        </span>
+      </div>
+
+      {/* Progress bar */}
+      <div>
+        <div style={{ height: 6, background: "#0f0f1a", borderRadius: 999, overflow: "hidden" }}>
+          <div style={{
+            height: "100%",
+            width: `${Math.min(pct, 100)}%`,
+            background: "linear-gradient(90deg,#a855f7,#22d3ee)",
+            borderRadius: 999,
+            transition: "width 0.4s ease",
+          }} />
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: 12, color: "#94a3b8" }}>
+          <span>{campaign.delivered} views delivered</span>
+          <span>Target: {campaign.target}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── PromoteTab Component ──────────────────────────────────────────────────────────
+
+function PromoteTab({ points, setPoints, campaigns, setCampaigns, urlInput, setUrlInput, viewsWanted, setViewsWanted }) {
+  const cost        = viewsWanted * COST_PER_VIEW;
+  const canLaunch   = urlInput.trim().length > 0 && points >= cost;
+
+  function handleLaunch() {
+    const newCampaign = {
+      id:        `c${Date.now()}`,
+      url:       urlInput.trim(),
+      title:     `My Video #${campaigns.length + 1}`,
+      target:    viewsWanted,
+      delivered: 0,
+    };
+    setCampaigns(prev => [newCampaign, ...prev]);
+    setPoints(p => p - cost);
+    setUrlInput("");
+    setViewsWanted(100);
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      {/* Form card */}
+      <div style={{ background: "#1a1a2e", border: "1px solid #ffffff10", borderRadius: 16, padding: 24 }}>
+        <h2 style={{ margin: "0 0 20px", fontSize: 18, fontWeight: 700 }}>
+          <Rocket size={18} style={{ verticalAlign: "middle", marginRight: 8, color: "#a855f7" }} />
+          Launch a Campaign
+        </h2>
+
+        {/* URL input */}
+        <div style={{ marginBottom: 20 }}>
+          <label style={{ display: "block", fontSize: 13, color: "#94a3b8", marginBottom: 8, fontWeight: 600 }}>
+            YouTube Video URL
+          </label>
+          <input
+            type="text"
+            placeholder="https://youtube.com/watch?v=..."
+            value={urlInput}
+            onChange={e => setUrlInput(e.target.value)}
+            style={{
+              width: "100%",
+              padding: "12px 16px",
+              borderRadius: 10,
+              border: "1px solid #ffffff20",
+              background: "#0f0f1a",
+              color: "#fff",
+              fontSize: 14,
+              outline: "none",
+              boxSizing: "border-box",
+            }}
+          />
+        </div>
+
+        {/* Views slider */}
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+            <label style={{ fontSize: 13, color: "#94a3b8", fontWeight: 600 }}>Views to Buy</label>
+            <span style={{ fontSize: 13, fontWeight: 700, color: "#22d3ee" }}>{viewsWanted} views</span>
+          </div>
+          <input
+            type="range"
+            min={10} max={500} step={10}
+            value={viewsWanted}
+            onChange={e => setViewsWanted(Number(e.target.value))}
+            style={{ width: "100%", accentColor: "#a855f7" }}
+          />
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4, fontSize: 11, color: "#4b5563" }}>
+            <span>10</span><span>500</span>
+          </div>
+        </div>
+
+        {/* Cost summary */}
+        <div style={{
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+          background: "#0f0f1a", borderRadius: 10, padding: "12px 16px", marginBottom: 20,
+        }}>
+          <span style={{ fontSize: 13, color: "#94a3b8" }}>Total cost</span>
+          <span style={{ fontWeight: 800, fontSize: 18, color: cost > points ? "#ef4444" : "#a855f7" }}>
+            <Coins size={14} style={{ verticalAlign: "middle", marginRight: 4, color: "#f59e0b" }} />
+            {cost.toLocaleString()} pts
+          </span>
+        </div>
+
+        {/* Submit button */}
+        <button
+          onClick={handleLaunch}
+          disabled={!canLaunch}
+          style={{
+            width: "100%",
+            padding: "14px",
+            borderRadius: 12,
+            border: "none",
+            fontWeight: 700,
+            fontSize: 15,
+            cursor: canLaunch ? "pointer" : "not-allowed",
+            background: canLaunch ? "linear-gradient(135deg,#a855f7,#22d3ee)" : "#1f2937",
+            color: canLaunch ? "#fff" : "#4b5563",
+            boxShadow: canLaunch ? "0 0 24px #a855f750" : "none",
+            transition: "all 0.2s",
+          }}
+        >
+          {!urlInput.trim()       ? "Paste a URL to continue"    :
+           points < cost          ? "Not enough points"           :
+                                    `🚀 Launch Campaign — ${cost.toLocaleString()} pts`}
+        </button>
+      </div>
+
+      {/* Live campaigns */}
+      {campaigns.length > 0 && (
+        <div>
+          <h3 style={{ margin: "0 0 12px", fontSize: 15, fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
+            <BarChart2 size={15} color="#22d3ee" /> Live Campaigns
+          </h3>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {campaigns.map(c => <CampaignCard key={c.id} campaign={c} />)}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── App ──────────────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [points,     setPoints]     = useState(500);
-  const [activeTab,  setActiveTab]  = useState("earn");
-  const [videoIndex, setVideoIndex] = useState(0);
-  const [timeLeft,   setTimeLeft]   = useState(WATCH_DURATION);
-  const [claimed,    setClaimed]    = useState(false);
+  const [points,      setPoints]      = useState(500);
+  const [activeTab,   setActiveTab]   = useState("earn");
+  const [videoIndex,  setVideoIndex]  = useState(0);
+  const [timeLeft,    setTimeLeft]    = useState(WATCH_DURATION);
+  const [claimed,     setClaimed]     = useState(false);
+  const [campaigns,   setCampaigns]   = useState(SEED_CAMPAIGNS);
+  const [urlInput,    setUrlInput]    = useState("");
+  const [viewsWanted, setViewsWanted] = useState(100);
 
   return (
     <div style={{ background: "#0f0f1a", minHeight: "100vh", color: "#fff", fontFamily: "system-ui, sans-serif" }}>
@@ -262,13 +450,20 @@ export default function App() {
         <div style={{ marginTop: 32 }}>
           {activeTab === "earn" && (
             <EarnTab
-              points={points}       setPoints={setPoints}
+              points={points}         setPoints={setPoints}
               videoIndex={videoIndex} setVideoIndex={setVideoIndex}
-              timeLeft={timeLeft}   setTimeLeft={setTimeLeft}
-              claimed={claimed}     setClaimed={setClaimed}
+              timeLeft={timeLeft}     setTimeLeft={setTimeLeft}
+              claimed={claimed}       setClaimed={setClaimed}
             />
           )}
-          {activeTab === "promote" && <div style={{ color: "#94a3b8" }}>PromoteTab coming soon</div>}
+          {activeTab === "promote" && (
+            <PromoteTab
+              points={points}           setPoints={setPoints}
+              campaigns={campaigns}     setCampaigns={setCampaigns}
+              urlInput={urlInput}       setUrlInput={setUrlInput}
+              viewsWanted={viewsWanted} setViewsWanted={setViewsWanted}
+            />
+          )}
         </div>
       </div>
     </div>
