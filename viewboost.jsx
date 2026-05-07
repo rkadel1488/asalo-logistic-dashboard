@@ -119,13 +119,15 @@ function EarnTab({ points, setPoints, videoIndex, setVideoIndex, timeLeft, setTi
     if (claimed) return; // don't tick after claiming
     clearInterval(intervalRef.current);
     intervalRef.current = setInterval(() => {
-      setTimeLeft(t => {
-        if (t <= 1) { clearInterval(intervalRef.current); return 0; }
-        return t - 1;
-      });
+      setTimeLeft(t => (t <= 1 ? 0 : t - 1));
     }, 1000);
     return () => clearInterval(intervalRef.current);
   }, [videoIndex, claimed]);
+
+  // Stop the interval when countdown reaches zero
+  useEffect(() => {
+    if (timeLeft === 0) clearInterval(intervalRef.current);
+  }, [timeLeft]);
 
   function handleClaim() {
     setPoints(p => p + POINTS_PER_WATCH);
@@ -140,7 +142,7 @@ function EarnTab({ points, setPoints, videoIndex, setVideoIndex, timeLeft, setTi
   }
 
   const progress   = timeLeft / WATCH_DURATION; // 1 → 0
-  const dashOffset = RING_CIRC * progress;       // full → 0
+  const dashOffset = RING_CIRC * (1 - progress); // 0 → full (ring drains)
   const canClaim   = timeLeft === 0 && !claimed;
   const videoId    = VIDEOS[videoIndex];
 
