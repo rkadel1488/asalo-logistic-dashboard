@@ -60,14 +60,68 @@ function Header({ points }) {
   );
 }
 
+// ── TabBar Component ───────────────────────────────────────────────────────────
+
+function TabBar({ activeTab, setActiveTab }) {
+  const tabs = [
+    { id: "earn",    label: "⚡ Earn Points"       },
+    { id: "promote", label: "🚀 Promote My Video"  },
+  ];
+
+  return (
+    <div style={{ display: "flex", justifyContent: "center", padding: "24px 0 0" }}>
+      <div style={{
+        display: "inline-flex",
+        background: "#1a1a2e",
+        border: "1px solid #ffffff10",
+        borderRadius: 999,
+        padding: 4,
+        gap: 4,
+      }}>
+        {tabs.map(tab => {
+          const active = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              style={{
+                padding: "10px 24px",
+                borderRadius: 999,
+                border: "none",
+                cursor: "pointer",
+                fontWeight: 600,
+                fontSize: 14,
+                transition: "all 200ms",
+                background: active ? "linear-gradient(135deg,#a855f7,#7c3aed)" : "transparent",
+                color: active ? "#fff" : "#94a3b8",
+                boxShadow: active ? "0 0 20px #a855f750" : "none",
+              }}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── App ──────────────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [points, setPoints] = useState(500);
+  const [points,    setPoints]    = useState(500);
+  const [activeTab, setActiveTab] = useState("earn");
 
   return (
     <div style={{ background: "#0f0f1a", minHeight: "100vh", color: "#fff", fontFamily: "system-ui, sans-serif" }}>
       <Header points={points} />
+      <div style={{ maxWidth: 860, margin: "0 auto", padding: "0 24px 48px" }}>
+        <TabBar activeTab={activeTab} setActiveTab={setActiveTab} />
+        <div style={{ marginTop: 32 }}>
+          {activeTab === "earn"    && <div style={{ color: "#94a3b8" }}>EarnTab placeholder</div>}
+          {activeTab === "promote" && <div style={{ color: "#94a3b8" }}>PromoteTab placeholder</div>}
+        </div>
+      </div>
     </div>
   );
 }
