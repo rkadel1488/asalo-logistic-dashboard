@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ViewBoost</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#0f0f1a;font-family:system-ui,-apple-system,BlinkMacSystemFont,sans-serif}
+    input[type=range]{accent-color:#a855f7;cursor:pointer;width:100%}
+    textarea{resize:vertical;font-family:inherit}
+    ::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:#0f0f1a}::-webkit-scrollbar-thumb{background:#2d2d4e;border-radius:3px}
+    @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+    @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(168,85,247,.4)}50%{box-shadow:0 0 0 8px rgba(168,85,247,0)}}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    @keyframes shimmer{0%{background-position:-400px 0}100%{background-position:400px 0}}
+    .fade-up{animation:fadeUp .25s ease}.pulse{animation:pulse 1.5s infinite}
+    .spinner{width:22px;height:22px;border:3px solid rgba(255,255,255,.2);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;display:inline-block}
+  </style>
+  <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.23.9/babel.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+// ── DB ────────────────────────────────────────────────────────────────────────
+const DB = {
+  users:     ()  => JSON.parse(localStorage.getItem('vb_users')  || '[]'),
+  saveUsers: u   => localStorage.setItem('vb_users', JSON.stringify(u)),
+  currentId: ()  => localStorage.getItem('vb_uid'),
+  login:     id  => localStorage.setItem('vb_uid', id),
+  logout:    ()  => localStorage.removeItem('vb_uid'),
+  campaigns: ()  => JSON.parse(localStorage.getItem('vb_camps')  || 'null'),
+  saveCamps: c   => localStorage.setItem('vb_camps', JSON.stringify(c)),
+  history:   ()  => JSON.parse(localStorage.getItem('vb_hist')   || '[]'),
+  pushHist: e => { const h=DB.history(); h.unshift(e); localStorage.setItem('vb_hist',JSON.stringify(h.slice(0,500))); },
+};
+
+// ── Seed ──────────────────────────────────────────────────────────────────────
+const SEED_USERS = [
+  { id:'u_demo',  name:'Demo User',    email:'demo@viewboost.com',  password:'demo123',  points:2000, createdAt:Date.now()-864e5*30 },
+  { id:'u_james', name:'James Wilson', email:'james@example.com',   password:'pass',     points:28400,createdAt:Date.now()-864e5*25 },
+  { id:'u_alice', name:'Alice Chen',   email:'alice@example.com',   password:'pass',     points:15750,createdAt:Date.now()-864e5*20 },
+  { id:'u_bob',   name:'Bob Martinez', email:'bob@example.com',     password:'pass',     points:9200, createdAt:Date.now()-864e5*18 },
+  { id:'u_priya', name:'Priya Sharma', email:'priya@example.com',   password:'pass',     points:4980, createdAt:Date.now()-864e5*14 },
+  { id:'u_luca',  name:'Luca Ferrari', email:'luca@example.com',    password:'pass',     points:2420, createdAt:Date.now()-864e5*7  },
+];
+const SEED_CAMPAIGNS = [
+  { id:'c1',ownerId:'u_james',url:'https://youtube.com/watch?v=dQw4w9WgXcQ',channelUrl:'https://www.youtube.com/@RickAstleyYT',title:'Product Launch Reel',target:200,delivered:134,taskType:'watch',watchDuration:45,createdAt:Date.now()-864e5*3 },
+  { id:'c2',ownerId:'u_alice',url:'https://youtube.com/watch?v=9bZkp7q19f0',channelUrl:'https://www.youtube.com/@officialpsy',title:'Tutorial — Getting Started',target:100,delivered:45,taskType:'subscribe',watchDuration:30,createdAt:Date.now()-864e5*2 },
+  { id:'c3',ownerId:'u_demo', url:'https://youtube.com/watch?v=kJQP7kiw5Fk',channelUrl:'https://www.youtube.com/@LuisFonsiVEVO',title:'My Vlog #7 — City Tour',target:150,delivered:72,taskType:'comment',watchDuration:60,createdAt:Date.now()-864e5 },
+  { id:'c4',ownerId:'u_bob',  url:'https://youtube.com/watch?v=JGwWNGJdvx8',channelUrl:'https://www.youtube.com/@Adele',title:'Adele — Hello (Cover)',target:300,delivered:88,taskType:'watch',watchDuration:30,createdAt:Date.now()-864e5*4 },
+  { id:'c5',ownerId:'u_priya',url:'https://youtube.com/watch?v=OPf0YbXqDm0',channelUrl:'https://www.youtube.com/@MichaelJackson',title:'Dance Choreography Reel',target:80,delivered:14,taskType:'subscribe',watchDuration:45,createdAt:Date.now()-3600e3*18 },
+];
+const SEED_HISTORY = [
+  { id:'sh1',userId:'u_james',campaignId:'c1',campaignTitle:'Product Launch Reel',taskType:'watch',pts:50,earnedAt:Date.now()-3600e3*2 },
+  { id:'sh2',userId:'u_alice',campaignId:'c2',campaignTitle:'Tutorial — Getting Started',taskType:'subscribe',pts:75,earnedAt:Date.now()-3600e3*3 },
+  { id:'sh3',userId:'u_james',campaignId:'c3',campaignTitle:'My Vlog #7',taskType:'comment',pts:100,earnedAt:Date.now()-3600e3*4 },
+  { id:'sh4',userId:'u_bob',  campaignId:'c1',campaignTitle:'Product Launch Reel',taskType:'watch',pts:50,earnedAt:Date.now()-3600e3*5 },
+  { id:'sh5',userId:'u_alice',campaignId:'c4',campaignTitle:'Adele Cover',taskType:'watch',pts:50,earnedAt:Date.now()-3600e3*6 },
+  { id:'sh6',userId:'u_james',campaignId:'c2',campaignTitle:'Tutorial',taskType:'subscribe',pts:75,earnedAt:Date.now()-3600e3*8 },
+  { id:'sh7',userId:'u_priya',campaignId:'c3',campaignTitle:'City Tour',taskType:'comment',pts:100,earnedAt:Date.now()-3600e3*10 },
+  { id:'sh8',userId:'u_bob',  campaignId:'c5',campaignTitle:'Choreography',taskType:'subscribe',pts:75,earnedAt:Date.now()-3600e3*12 },
+];
+
+const SEED_VERSION = 'v3';
+function initDB() {
+  // Re-seed if version changed (picks up new user balances and pricing)
+  if (localStorage.getItem('vb_seed') !== SEED_VERSION) {
+    DB.saveUsers(SEED_USERS);
+    DB.saveCamps(SEED_CAMPAIGNS);
+    localStorage.setItem('vb_hist', JSON.stringify(SEED_HISTORY));
+    localStorage.removeItem('vb_uid'); // force re-login so balance refreshes
+    localStorage.setItem('vb_seed', SEED_VERSION);
+  }
+}
+initDB();
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+const TASK_DEFS = {
+  watch:     { label:'Watch',             emoji:'👁️', pts:50,  costPerView:5,  accent:'#22d3ee', desc:'Watch the video for the required duration' },
+  subscribe: { label:'Watch + Subscribe', emoji:'🔔', pts:75,  costPerView:8,  accent:'#a855f7', desc:'Watch & subscribe to the creator\'s channel' },
+  comment:   { label:'Watch + Comment',   emoji:'💬', pts:100, costPerView:12, accent:'#f59e0b', desc:'Watch & leave a genuine comment on the video' },
+};
+const PACKAGES = [
+  { id:'starter', name:'Starter',  pts:2000,  price:0.99, badge:null,          accent:'#64748b', features:['2,000 Points','Run 1 campaign','Basic support','Best for beginners'] },
+  { id:'growth',  name:'Growth',   pts:5000,  price:1.99, badge:'Most Popular', accent:'#a855f7', features:['5,000 Points','Run 3 campaigns','Priority support','Save 20%'] },
+  { id:'pro',     name:'Pro',      pts:15000, price:5.99, badge:'Best Value',   accent:'#22d3ee', features:['15,000 Points','Unlimited campaigns','Priority support','Save 40%','Analytics'] },
+  { id:'creator', name:'Creator',  pts:30000, price:9.99, badge:null,          accent:'#f59e0b', features:['30,000 Points','Unlimited campaigns','Dedicated support','Save 50%','Analytics','API Access'] },
+];
+const RING_R=54, RING_CIRC=2*Math.PI*RING_R;
+function extractVideoId(url=''){const m=url.match(/(?:[?&]v=|youtu\.be\/|embed\/)([A-Za-z0-9_-]{11})/);return m?m[1]:null;}
+function fmtDate(ts){return new Date(ts).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}
+function fmtTime(ts){return new Date(ts).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});}
+function initials(n=''){return n.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);}
+function timeAgo(ts){const d=Date.now()-ts,m=60e3,h=3600e3,day=864e5;if(d<m)return'just now';if(d<h)return`${Math.floor(d/m)}m ago`;if(d<day)return`${Math.floor(d/h)}h ago`;return`${Math.floor(d/day)}d ago`;}
+
+// ── Icons ─────────────────────────────────────────────────────────────────────
+const Ic=({s=16,c='currentColor',f='none',sw=2,style,ch})=>(
+  <svg width={s} height={s} viewBox="0 0 24 24" fill={f} stroke={c} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" style={{display:'inline-block',verticalAlign:'middle',flexShrink:0,...style}}>{ch}</svg>
+);
+const Play      = p=><Ic {...p} ch={<polygon points="5 3 19 12 5 21 5 3" fill={p.fill||'none'}/>}/>;
+const Coins     = p=><Ic {...p} ch={<><circle cx="8" cy="8" r="6"/><path d="M18.09 10.37A6 6 0 1 1 10.34 18"/><path d="M7 6h1v4"/><path d="m16.71 13.88.7.71-2.82 2.82"/></>}/>;
+const Rocket    = p=><Ic {...p} ch={<><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></>}/>;
+const BarChart  = p=><Ic {...p} ch={<><line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/></>}/>;
+const ExtLink   = p=><Ic {...p} ch={<><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" x2="21" y1="14" y2="3"/></>}/>;
+const ArrowL    = p=><Ic {...p} ch={<><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></>}/>;
+const Check     = p=><Ic {...p} ch={<><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></>}/>;
+const MsgSq     = p=><Ic {...p} ch={<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>}/>;
+const Bell      = p=><Ic {...p} ch={<><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></>}/>;
+const Eye       = p=><Ic {...p} ch={<><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>}/>;
+const Clock     = p=><Ic {...p} ch={<><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>}/>;
+const LogOut    = p=><Ic {...p} ch={<><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></>}/>;
+const Trophy    = p=><Ic {...p} ch={<><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2z"/></>}/>;
+const Youtube   = p=><Ic {...p} ch={<><path d="M22.54 6.42a2.78 2.78 0 0 0-1.95-1.96C18.88 4 12 4 12 4s-6.88 0-8.59.46a2.78 2.78 0 0 0-1.95 1.96A29 29 0 0 0 1 12a29 29 0 0 0 .46 5.58A2.78 2.78 0 0 0 3.41 19.6C5.12 20 12 20 12 20s6.88 0 8.59-.46a2.78 2.78 0 0 0 1.95-1.95A29 29 0 0 0 23 12a29 29 0 0 0-.46-5.58z"/><polygon points="9.75 15.02 15.5 12 9.75 8.98 9.75 15.02" fill="white" stroke="none"/></>}/>;
+const Users     = p=><Ic {...p} ch={<><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></>}/>;
+const Star      = p=><Ic {...p} ch={<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>}/>;
+const ShoppingB = p=><Ic {...p} ch={<><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></>}/>;
+const Zap       = p=><Ic {...p} ch={<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>}/>;
+const Globe     = p=><Ic {...p} ch={<><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></>}/>;
+const Crown     = p=><Ic {...p} ch={<><path d="m2 4 3 12h14l3-12-6 7-4-7-4 7-6-7z"/><path d="M5 20h14"/></>}/>;
+
+// ── Login Screen ──────────────────────────────────────────────────────────────
+function LoginScreen({ onLogin }) {
+  const [mode,setMode]=useState('login');
+  const [name,setName]=useState('');
+  const [email,setEmail]=useState('');
+  const [pass,setPass]=useState('');
+  const [err,setErr]=useState('');
+  const [loading,setLoading]=useState(false);
+
+  function submit(e){
+    e.preventDefault(); setErr('');
+    if(mode==='login'){
+      const u=DB.users().find(u=>u.email===email&&u.password===pass);
+      if(!u){setErr('Invalid email or password.');return;}
+      DB.login(u.id); onLogin(u);
+    } else {
+      if(!name.trim()){setErr('Please enter your name.');return;}
+      if(DB.users().find(u=>u.email===email)){setErr('Email already registered.');return;}
+      const u={id:`u_${Date.now()}`,name:name.trim(),email,password:pass,points:2000,createdAt:Date.now(),signupBonus:true};
+      const users=DB.users(); users.push(u); DB.saveUsers(users);
+      DB.login(u.id); onLogin(u);
+    }
+  }
+  function demoLogin(){
+    setLoading(true);
+    setTimeout(()=>{const u=DB.users().find(u=>u.id==='u_demo');if(u){DB.login(u.id);onLogin(u);}setLoading(false);},500);
+  }
+  const inp=(val,set,type,ph)=>(
+    <input type={type} value={val} onChange={e=>set(e.target.value)} placeholder={ph} required
+      style={{width:'100%',padding:'12px 16px',borderRadius:10,border:'1px solid rgba(255,255,255,.1)',background:'#0d0d1f',color:'#fff',fontSize:14,outline:'none',fontFamily:'inherit',marginBottom:12}}/>
+  );
+  return (
+    <div className="fade-up" style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'#0f0f1a',padding:24}}>
+      <div style={{width:'100%',maxWidth:420}}>
+        <div style={{textAlign:'center',marginBottom:36}}>
+          <div style={{width:58,height:58,borderRadius:14,background:'linear-gradient(135deg,#a855f7,#22d3ee)',display:'inline-flex',alignItems:'center',justifyContent:'center',marginBottom:14,boxShadow:'0 0 32px rgba(168,85,247,.4)'}}>
+            <Play s={26} c="#fff" fill="#fff"/>
+          </div>
+          <div style={{fontSize:28,fontWeight:800,color:'#fff',letterSpacing:'-0.5px'}}>View<span style={{color:'#a855f7'}}>Boost</span></div>
+          <div style={{fontSize:14,color:'#64748b',marginTop:6}}>Earn points. Grow your channel.</div>
+          {mode==='register'&&<div style={{marginTop:12,padding:'8px 16px',background:'linear-gradient(135deg,rgba(245,158,11,.15),rgba(168,85,247,.15))',border:'1px solid rgba(245,158,11,.35)',borderRadius:10,display:'inline-flex',alignItems:'center',gap:7,fontSize:13,color:'#f59e0b',fontWeight:700}}>🎁 Sign up and get <span style={{color:'#fff'}}>2,000 points FREE!</span></div>}
+        </div>
+        <div style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,.07)',borderRadius:18,padding:28}}>
+          <h2 style={{fontSize:18,fontWeight:700,color:'#fff',marginBottom:22}}>{mode==='login'?'Sign in to your account':'Create your account'}</h2>
+          <form onSubmit={submit}>
+            {mode==='register'&&inp(name,setName,'text','Full name')}
+            {inp(email,setEmail,'email','Email address')}
+            {inp(pass,setPass,'password','Password')}
+            {err&&<div style={{color:'#f87171',fontSize:13,marginBottom:12,padding:'8px 12px',background:'rgba(248,113,113,.1)',borderRadius:8}}>{err}</div>}
+            <button type="submit" style={{width:'100%',padding:'13px',borderRadius:11,border:'none',background:'linear-gradient(135deg,#a855f7,#7c3aed)',color:'#fff',fontWeight:700,fontSize:15,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 0 24px rgba(168,85,247,.35)',marginBottom:12}}>
+              {mode==='login'?'Sign In':'Create Account'}
+            </button>
+          </form>
+          <button onClick={demoLogin} disabled={loading} style={{width:'100%',padding:'12px',borderRadius:11,border:'1px solid rgba(34,211,238,.3)',background:'rgba(34,211,238,.06)',color:'#22d3ee',fontWeight:600,fontSize:14,cursor:'pointer',fontFamily:'inherit',marginBottom:16,display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+            <Zap s={14} c="#22d3ee"/> {loading?'Loading…':'Try Demo Account'}
+          </button>
+          <div style={{textAlign:'center',fontSize:13,color:'#64748b'}}>
+            {mode==='login'?"Don't have an account? ":"Already have an account? "}
+            <span onClick={()=>{setMode(mode==='login'?'register':'login');setErr('');}} style={{color:'#a855f7',cursor:'pointer',fontWeight:600}}>
+              {mode==='login'?'Sign Up':'Sign In'}
+            </span>
+          </div>
+        </div>
+        <div style={{textAlign:'center',marginTop:14,fontSize:11,color:'#374151'}}>Demo: demo@viewboost.com / demo123</div>
+      </div>
+    </div>
+  );
+}
+
+// ── Header ────────────────────────────────────────────────────────────────────
+function Header({ user, points, onLogout }) {
+  const [open,setOpen]=useState(false);
+  return (
+    <header style={{background:'#13132a',borderBottom:'1px solid rgba(255,255,255,.08)',padding:'0 24px',position:'sticky',top:0,zIndex:100}}>
+      <div style={{maxWidth:960,margin:'0 auto',height:62,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+        <div style={{display:'flex',alignItems:'center',gap:10}}>
+          <div style={{width:30,height:30,borderRadius:7,background:'linear-gradient(135deg,#a855f7,#22d3ee)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+            <Play s={14} c="#fff" fill="#fff"/>
+          </div>
+          <span style={{fontWeight:800,fontSize:19,letterSpacing:'-0.5px',color:'#fff'}}>View<span style={{color:'#a855f7'}}>Boost</span></span>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:12}}>
+          <div style={{display:'flex',alignItems:'center',gap:6,background:'linear-gradient(135deg,#1e1140,#1a1a2e)',border:'1px solid rgba(168,85,247,.25)',borderRadius:999,padding:'5px 14px',boxShadow:'0 0 14px rgba(168,85,247,.18)'}}>
+            <Coins s={14} c="#f59e0b"/><span style={{fontWeight:700,fontSize:14,color:'#fff'}}>{points.toLocaleString()}</span><span style={{color:'#94a3b8',fontSize:11}}>pts</span>
+          </div>
+          <div style={{position:'relative'}}>
+            <button onClick={()=>setOpen(o=>!o)} style={{display:'flex',alignItems:'center',gap:8,background:'#1a1a2e',border:'1px solid rgba(255,255,255,.1)',borderRadius:999,padding:'5px 12px 5px 5px',cursor:'pointer'}}>
+              <div style={{width:28,height:28,borderRadius:999,background:'linear-gradient(135deg,#a855f7,#22d3ee)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:800,color:'#fff'}}>{initials(user.name)}</div>
+              <span style={{fontSize:13,fontWeight:600,color:'#fff',maxWidth:90,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{user.name.split(' ')[0]}</span>
+            </button>
+            {open&&(
+              <div style={{position:'absolute',right:0,top:'calc(100% + 8px)',background:'#1a1a2e',border:'1px solid rgba(255,255,255,.08)',borderRadius:12,padding:8,minWidth:160,zIndex:200,boxShadow:'0 8px 32px rgba(0,0,0,.4)'}}>
+                <div style={{padding:'7px 12px',fontSize:11,color:'#64748b',borderBottom:'1px solid rgba(255,255,255,.06)',marginBottom:4}}>{user.email}</div>
+                <button onClick={()=>{setOpen(false);onLogout();}} style={{width:'100%',padding:'8px 12px',borderRadius:8,border:'none',background:'transparent',color:'#f87171',fontSize:13,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:8,fontWeight:600}}>
+                  <LogOut s={13} c="#f87171"/> Sign Out
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+// ── TabBar ────────────────────────────────────────────────────────────────────
+function TabBar({ activeTab, setActiveTab }) {
+  const tabs=[{id:'discover',label:'🌐 Discover'},{id:'earn',label:'⚡ Earn'},{id:'promote',label:'🚀 Promote'},{id:'dashboard',label:'📊 My Stats'}];
+  return (
+    <div style={{display:'flex',justifyContent:'center',padding:'18px 0 0'}}>
+      <div style={{display:'inline-flex',background:'#1a1a2e',border:'1px solid rgba(255,255,255,.06)',borderRadius:999,padding:4,gap:4}}>
+        {tabs.map(t=>{
+          const a=activeTab===t.id;
+          return <button key={t.id} onClick={()=>setActiveTab(t.id)} style={{padding:'9px 18px',borderRadius:999,border:'none',cursor:'pointer',fontWeight:600,fontSize:13,fontFamily:'inherit',transition:'all 200ms',background:a?'linear-gradient(135deg,#a855f7,#7c3aed)':'transparent',color:a?'#fff':'#94a3b8',boxShadow:a?'0 0 20px rgba(168,85,247,.31)':'none'}}>{t.label}</button>;
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Shared: TaskBadge ─────────────────────────────────────────────────────────
+function TaskBadge({ taskType, sm }) {
+  const d=TASK_DEFS[taskType];
+  return <span style={{display:'inline-flex',alignItems:'center',gap:4,background:`${d.accent}18`,color:d.accent,border:`1px solid ${d.accent}40`,borderRadius:999,padding:sm?'2px 8px':'4px 12px',fontSize:sm?11:12,fontWeight:700,whiteSpace:'nowrap'}}>{d.emoji} {d.label}</span>;
+}
+
+// ── Shared: TimerRing ─────────────────────────────────────────────────────────
+function TimerRing({ timeLeft, totalTime, done }) {
+  const p=totalTime>0?timeLeft/totalTime:0, off=RING_CIRC*(1-p), col=done?'#a855f7':'#22d3ee';
+  return (
+    <div style={{position:'relative',width:112,height:112}}>
+      <svg width="112" height="112" style={{transform:'rotate(-90deg)'}}>
+        <circle cx="56" cy="56" r={RING_R} fill="none" stroke="#1a1a2e" strokeWidth="7"/>
+        <circle cx="56" cy="56" r={RING_R} fill="none" stroke={col} strokeWidth="7" strokeLinecap="round" strokeDasharray={RING_CIRC} strokeDashoffset={off} style={{transition:'stroke-dashoffset 0.9s linear, stroke 0.3s'}}/>
+      </svg>
+      <div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center'}}>
+        <span style={{fontSize:26,fontWeight:800,color:col,lineHeight:1}}>{timeLeft}</span>
+        <span style={{fontSize:9,color:'#64748b',marginTop:3,textTransform:'uppercase',letterSpacing:'0.06em'}}>sec</span>
+      </div>
+    </div>
+  );
+}
+
+// ── Shared: CampaignCard ──────────────────────────────────────────────────────
+function CampaignCard({ campaign, compact, actionLabel, onAction }) {
+  const pct=Math.min(Math.round((campaign.delivered/campaign.target)*100),100);
+  const d=TASK_DEFS[campaign.taskType];
+  const owner=DB.users().find(u=>u.id===campaign.ownerId);
+  return (
+    <div style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,.06)',borderRadius:12,padding:compact?'12px 15px':'16px 20px',display:'flex',flexDirection:'column',gap:8}}>
+      <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:10}}>
+        <div style={{minWidth:0}}>
+          <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:3,flexWrap:'wrap'}}>
+            <div style={{fontWeight:700,fontSize:compact?13:14,color:'#fff'}}>{campaign.title}</div>
+            <TaskBadge taskType={campaign.taskType} sm/>
+          </div>
+          {!compact&&<>
+            <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+              <a href={campaign.url} target="_blank" rel="noreferrer" style={{color:'#64748b',fontSize:11,textDecoration:'none',display:'flex',alignItems:'center',gap:3}}>
+                <ExtLink s={9} c="#64748b"/>{campaign.url.length>44?campaign.url.slice(0,44)+'…':campaign.url}
+              </a>
+              <span style={{color:'#4b5563',fontSize:11,display:'flex',alignItems:'center',gap:3}}><Clock s={9} c="#4b5563"/>{campaign.watchDuration}s</span>
+              {owner&&<span style={{color:'#4b5563',fontSize:11}}>by {owner.name.split(' ')[0]}</span>}
+            </div>
+          </>}
+        </div>
+        <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:6}}>
+          <span style={{background:pct>=100?'rgba(22,163,74,.13)':'rgba(168,85,247,.13)',color:pct>=100?'#4ade80':'#a855f7',border:`1px solid ${pct>=100?'rgba(74,222,128,.25)':'rgba(168,85,247,.25)'}`,borderRadius:999,padding:'2px 10px',fontSize:11,fontWeight:700,whiteSpace:'nowrap'}}>{pct}%</span>
+          {actionLabel&&<button onClick={onAction} style={{padding:'5px 12px',borderRadius:7,border:'none',background:`${d.accent}cc`,color:'#fff',fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap'}}>{actionLabel}</button>}
+        </div>
+      </div>
+      <div>
+        <div style={{height:5,background:'#0f0f1a',borderRadius:999,overflow:'hidden'}}>
+          <div style={{height:'100%',width:`${pct}%`,background:'linear-gradient(90deg,#a855f7,#22d3ee)',borderRadius:999,transition:'width .4s ease'}}/>
+        </div>
+        <div style={{display:'flex',justifyContent:'space-between',marginTop:5,fontSize:11,color:'#64748b'}}>
+          <span>{campaign.delivered} / {campaign.target} views</span>
+          <span style={{color:d.accent}}>{d.emoji} +{d.pts} pts</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Buy Modal ─────────────────────────────────────────────────────────────────
+function BuyModal({ pkg, user, setUser, onClose }) {
+  const [phase, setPhase] = useState('confirm'); // confirm | processing | success
+  function handleBuy() {
+    setPhase('processing');
+    setTimeout(() => {
+      const users=DB.users(); const idx=users.findIndex(u=>u.id===user.id);
+      if(idx>=0){users[idx].points+=pkg.pts;DB.saveUsers(users);setUser({...user,points:user.points+pkg.pts});}
+      setPhase('success');
+    }, 1600);
+  }
+  return (
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.7)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:20}} onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+      <div className="fade-up" style={{background:'#1a1a2e',border:`1px solid ${pkg.accent}40`,borderRadius:18,padding:28,width:'100%',maxWidth:380,textAlign:'center'}}>
+        {phase==='confirm'&&<>
+          <div style={{fontSize:40,marginBottom:12}}>🛒</div>
+          <h3 style={{fontSize:20,fontWeight:800,color:'#fff',marginBottom:6}}>{pkg.name} Pack</h3>
+          <div style={{fontSize:36,fontWeight:800,color:pkg.accent,marginBottom:4}}>${pkg.price}</div>
+          <div style={{fontSize:13,color:'#64748b',marginBottom:20}}>You'll receive <strong style={{color:'#fff'}}>{pkg.pts.toLocaleString()} points</strong></div>
+          <div style={{background:'#0f0f1a',borderRadius:10,padding:'12px 16px',marginBottom:20,textAlign:'left'}}>
+            {pkg.features.map(f=>(
+              <div key={f} style={{display:'flex',alignItems:'center',gap:8,marginBottom:6,fontSize:13,color:'#94a3b8'}}>
+                <Check s={13} c="#4ade80"/> {f}
+              </div>
+            ))}
+          </div>
+          <div style={{display:'flex',gap:10}}>
+            <button onClick={onClose} style={{flex:1,padding:'12px',borderRadius:10,border:'1px solid rgba(255,255,255,.1)',background:'transparent',color:'#94a3b8',cursor:'pointer',fontFamily:'inherit',fontWeight:600,fontSize:14}}>Cancel</button>
+            <button onClick={handleBuy} style={{flex:2,padding:'12px',borderRadius:10,border:'none',background:`linear-gradient(135deg,${pkg.accent},${pkg.accent}99)`,color:'#fff',cursor:'pointer',fontFamily:'inherit',fontWeight:700,fontSize:14,boxShadow:`0 0 20px ${pkg.accent}44`}}>
+              Confirm Purchase
+            </button>
+          </div>
+          <div style={{fontSize:11,color:'#374151',marginTop:12}}>⚡ Demo mode — no real charge. Points added instantly.</div>
+        </>}
+        {phase==='processing'&&<>
+          <div style={{marginBottom:20,marginTop:10}}><div className="spinner" style={{width:48,height:48,margin:'0 auto',borderWidth:4}}/></div>
+          <h3 style={{fontSize:18,fontWeight:700,color:'#fff',marginBottom:8}}>Processing…</h3>
+          <p style={{fontSize:13,color:'#64748b'}}>Securing your purchase</p>
+        </>}
+        {phase==='success'&&<>
+          <div style={{fontSize:52,marginBottom:12}}>🎉</div>
+          <h3 style={{fontSize:22,fontWeight:800,color:'#4ade80',marginBottom:8}}>Purchase Complete!</h3>
+          <p style={{fontSize:14,color:'#94a3b8',marginBottom:6}}><strong style={{color:'#fff',fontSize:22}}>{pkg.pts.toLocaleString()}</strong> points added to your balance</p>
+          <p style={{fontSize:13,color:'#64748b',marginBottom:20}}>New balance: {(user.points).toLocaleString()} pts</p>
+          <button onClick={onClose} style={{width:'100%',padding:'13px',borderRadius:11,border:'none',background:'linear-gradient(135deg,#4ade80,#16a34a)',color:'#fff',fontWeight:700,fontSize:15,cursor:'pointer',fontFamily:'inherit'}}>
+            Start Promoting 🚀
+          </button>
+        </>}
+      </div>
+    </div>
+  );
+}
+
+// ── Discover Tab ──────────────────────────────────────────────────────────────
+function DiscoverTab({ user, setUser, campaigns, setActiveTab, setActiveTask }) {
+  const [buyPkg, setBuyPkg] = useState(null);
+  const allUsers  = DB.users();
+  const history   = DB.history();
+  const active    = campaigns.filter(c=>c.delivered<c.target);
+  const totalPts  = history.reduce((s,h)=>s+h.pts,0);
+
+  // Build leaderboard: users with task counts + points
+  const leaderboard = allUsers.map(u=>({
+    ...u,
+    tasks:   history.filter(h=>h.userId===u.id).length,
+    earned:  history.filter(h=>h.userId===u.id).reduce((s,h)=>s+h.pts,0),
+  })).sort((a,b)=>b.points-a.points);
+
+  function startTask(camp) {
+    setActiveTask(camp);
+    setActiveTab('earn');
+  }
+
+  const rankColors=['#f59e0b','#94a3b8','#cd7c32'];
+
+  return (
+    <div className="fade-up" style={{display:'flex',flexDirection:'column',gap:32}}>
+
+      {/* ── Hero Stats ────────────────────────────────────────────────────── */}
+      <div style={{background:'linear-gradient(135deg,#1e1140 0%,#0f1a2e 50%,#1a0f2e 100%)',borderRadius:18,border:'1px solid rgba(168,85,247,.2)',padding:'28px 32px',position:'relative',overflow:'hidden'}}>
+        {/* Background glow */}
+        <div style={{position:'absolute',top:-60,right:-60,width:200,height:200,background:'radial-gradient(circle,rgba(168,85,247,.15),transparent 70%)',pointerEvents:'none'}}/>
+        <div style={{position:'absolute',bottom:-40,left:-40,width:160,height:160,background:'radial-gradient(circle,rgba(34,211,238,.1),transparent 70%)',pointerEvents:'none'}}/>
+        <div style={{position:'relative'}}>
+          <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
+            <Globe s={20} c="#a855f7"/>
+            <h2 style={{fontSize:22,fontWeight:800,color:'#fff',letterSpacing:'-0.3px'}}>ViewBoost Platform</h2>
+          </div>
+          <p style={{fontSize:13,color:'#94a3b8',marginBottom:22,maxWidth:480}}>A live view-for-view exchange. Watch videos, earn points, spend them to grow your channel — every task is real, every view is earned.</p>
+          <div style={{display:'flex',gap:20,flexWrap:'wrap'}}>
+            {[
+              {icon:'👥',val:allUsers.length,label:'Members'},
+              {icon:'🚀',val:active.length,label:'Active Campaigns'},
+              {icon:'⚡',val:totalPts.toLocaleString(),label:'Points Distributed'},
+              {icon:'✅',val:history.length,label:'Tasks Completed'},
+            ].map(s=>(
+              <div key={s.label} style={{background:'rgba(255,255,255,.05)',borderRadius:12,padding:'12px 18px',border:'1px solid rgba(255,255,255,.07)'}}>
+                <div style={{fontSize:22,marginBottom:4}}>{s.icon}</div>
+                <div style={{fontSize:22,fontWeight:800,color:'#fff'}}>{s.val}</div>
+                <div style={{fontSize:11,color:'#64748b'}}>{s.label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ── How It Works ──────────────────────────────────────────────────── */}
+      <div>
+        <h3 style={{fontSize:16,fontWeight:800,color:'#fff',marginBottom:16,display:'flex',alignItems:'center',gap:8}}>
+          <Zap s={16} c="#f59e0b"/> How ViewBoost Works
+        </h3>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))',gap:12}}>
+          {[
+            {step:1,icon:'📺',title:'Choose a Task',color:'#22d3ee',desc:'Browse live campaigns on the Earn tab. Each task shows the video, required watch time, and point reward.'},
+            {step:2,icon:'⏱️',title:'Complete the Task',color:'#a855f7',desc:'Watch for the required time. Depending on task type, also subscribe to the channel or leave a comment.'},
+            {step:3,icon:'🏆',title:'Earn Points',color:'#f59e0b',desc:'Claim your points once requirements are met. Points are instantly added to your balance.'},
+            {step:4,icon:'🚀',title:'Promote Your Video',color:'#4ade80',desc:'Spend points in the Promote tab. Set your task type, watch duration, and number of views to buy.'},
+          ].map(s=>(
+            <div key={s.step} style={{background:'#1a1a2e',border:`1px solid ${s.color}25`,borderRadius:14,padding:'18px 16px',display:'flex',flexDirection:'column',gap:10}}>
+              <div style={{display:'flex',alignItems:'center',gap:10}}>
+                <div style={{width:28,height:28,borderRadius:8,background:`${s.color}20`,border:`1px solid ${s.color}40`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:800,color:s.color}}>0{s.step}</div>
+                <span style={{fontSize:18}}>{s.icon}</span>
+              </div>
+              <div style={{fontWeight:700,fontSize:14,color:'#fff'}}>{s.title}</div>
+              <div style={{fontSize:12,color:'#64748b',lineHeight:1.5}}>{s.desc}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Live Promotions ───────────────────────────────────────────────── */}
+      <div>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
+          <h3 style={{fontSize:16,fontWeight:800,color:'#fff',display:'flex',alignItems:'center',gap:8}}>
+            <BarChart s={16} c="#22d3ee"/> Live Promotions
+            <span style={{background:'rgba(34,211,238,.15)',color:'#22d3ee',border:'1px solid rgba(34,211,238,.3)',borderRadius:999,padding:'2px 10px',fontSize:11,fontWeight:700}}>{active.length} active</span>
+          </h3>
+          <button onClick={()=>setActiveTab('earn')} style={{display:'flex',alignItems:'center',gap:5,background:'transparent',border:'1px solid rgba(255,255,255,.1)',borderRadius:8,padding:'6px 12px',color:'#94a3b8',fontSize:12,cursor:'pointer',fontFamily:'inherit',fontWeight:600}}
+            onMouseEnter={e=>{e.currentTarget.style.color='#fff';e.currentTarget.style.borderColor='rgba(255,255,255,.3)'}}
+            onMouseLeave={e=>{e.currentTarget.style.color='#94a3b8';e.currentTarget.style.borderColor='rgba(255,255,255,.1)'}}>
+            Earn Points →
+          </button>
+        </div>
+        {active.length===0
+          ? <div style={{textAlign:'center',padding:'32px 0',color:'#374151',fontSize:13}}>No active campaigns right now.</div>
+          : <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(280px,1fr))',gap:10}}>
+              {active.map(c=>(
+                <CampaignCard key={c.id} campaign={c}
+                  actionLabel={`Earn +${TASK_DEFS[c.taskType].pts} pts`}
+                  onAction={()=>startTask(c)}/>
+              ))}
+            </div>
+        }
+      </div>
+
+      {/* ── Leaderboard ───────────────────────────────────────────────────── */}
+      <div>
+        <h3 style={{fontSize:16,fontWeight:800,color:'#fff',marginBottom:14,display:'flex',alignItems:'center',gap:8}}>
+          <Trophy s={16} c="#f59e0b"/> Top Members
+        </h3>
+        <div style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,.06)',borderRadius:14,overflow:'hidden'}}>
+          {/* Table header */}
+          <div style={{display:'grid',gridTemplateColumns:'48px 1fr 120px 100px 80px',padding:'10px 16px',background:'rgba(255,255,255,.03)',borderBottom:'1px solid rgba(255,255,255,.06)',fontSize:11,fontWeight:700,color:'#4b5563',textTransform:'uppercase',letterSpacing:'0.05em'}}>
+            <span>#</span><span>Member</span><span style={{textAlign:'right'}}>Balance</span><span style={{textAlign:'right'}}>Tasks Done</span><span style={{textAlign:'right'}}>Total Earned</span>
+          </div>
+          {leaderboard.map((u,i)=>{
+            const isMe=u.id===user.id;
+            const rankCol=i<3?rankColors[i]:'#374151';
+            return (
+              <div key={u.id} style={{display:'grid',gridTemplateColumns:'48px 1fr 120px 100px 80px',padding:'12px 16px',borderBottom:i<leaderboard.length-1?'1px solid rgba(255,255,255,.04)':'none',alignItems:'center',background:isMe?'rgba(168,85,247,.06)':'transparent',transition:'background .15s'}}
+                onMouseEnter={e=>!isMe&&(e.currentTarget.style.background='rgba(255,255,255,.02)')}
+                onMouseLeave={e=>!isMe&&(e.currentTarget.style.background='transparent')}>
+                <div style={{fontWeight:800,fontSize:i<3?16:13,color:rankCol,display:'flex',alignItems:'center'}}>
+                  {i===0?'🥇':i===1?'🥈':i===2?'🥉':`${i+1}`}
+                </div>
+                <div style={{display:'flex',alignItems:'center',gap:10}}>
+                  <div style={{width:32,height:32,borderRadius:999,background:`linear-gradient(135deg,${i<3?rankCol:'#374151'},${i<3?rankCol+'88':'#1f2937'})`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:800,color:'#fff',flexShrink:0}}>
+                    {initials(u.name)}
+                  </div>
+                  <div>
+                    <div style={{fontWeight:600,fontSize:13,color:'#fff',display:'flex',alignItems:'center',gap:6}}>
+                      {u.name}
+                      {isMe&&<span style={{background:'rgba(168,85,247,.2)',color:'#a855f7',border:'1px solid rgba(168,85,247,.4)',borderRadius:999,padding:'1px 7px',fontSize:10,fontWeight:700}}>You</span>}
+                    </div>
+                    <div style={{fontSize:11,color:'#4b5563'}}>Joined {fmtDate(u.createdAt)}</div>
+                  </div>
+                </div>
+                <div style={{textAlign:'right',fontWeight:700,fontSize:13,color:'#f59e0b',display:'flex',alignItems:'center',justifyContent:'flex-end',gap:4}}>
+                  <Coins s={11} c="#f59e0b"/>{u.points.toLocaleString()} pts
+                </div>
+                <div style={{textAlign:'right',fontWeight:600,fontSize:13,color:'#94a3b8'}}>{u.tasks}</div>
+                <div style={{textAlign:'right',fontWeight:600,fontSize:13,color:'#4ade80'}}>+{u.earned}</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── Buy Points ────────────────────────────────────────────────────── */}
+      <div>
+        <div style={{textAlign:'center',marginBottom:20}}>
+          <h3 style={{fontSize:22,fontWeight:800,color:'#fff',marginBottom:8,display:'flex',alignItems:'center',justifyContent:'center',gap:10}}>
+            <ShoppingB s={20} c="#a855f7"/> Buy Points
+          </h3>
+          <p style={{fontSize:13,color:'#64748b',maxWidth:440,margin:'0 auto'}}>Need more points? Top up instantly. New accounts receive <span style={{color:'#f59e0b',fontWeight:700}}>2,000 points free</span> on signup.</p>
+        </div>
+        {/* Free signup banner */}
+        <div style={{background:'linear-gradient(135deg,rgba(245,158,11,.12),rgba(168,85,247,.12))',border:'1px solid rgba(245,158,11,.3)',borderRadius:14,padding:'16px 22px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:16,marginBottom:16,flexWrap:'wrap'}}>
+          <div style={{display:'flex',alignItems:'center',gap:14}}>
+            <span style={{fontSize:32}}>🎁</span>
+            <div>
+              <div style={{fontWeight:800,fontSize:15,color:'#fff'}}>New Member Bonus — Completely Free</div>
+              <div style={{fontSize:12,color:'#94a3b8',marginTop:2}}>Create a free account and instantly receive <strong style={{color:'#f59e0b'}}>2,000 points</strong> to start promoting right away. No card required.</div>
+            </div>
+          </div>
+          <div style={{textAlign:'center',flexShrink:0}}>
+            <div style={{fontSize:28,fontWeight:800,color:'#f59e0b'}}>2,000 pts</div>
+            <div style={{fontSize:11,color:'#64748b'}}>on signup · free forever</div>
+          </div>
+        </div>
+
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))',gap:14}}>
+          {PACKAGES.map(pkg=>(
+            <div key={pkg.id} style={{background:'#1a1a2e',border:`1px solid ${pkg.accent}${pkg.badge?'60':'25'}`,borderRadius:16,padding:'22px 20px',display:'flex',flexDirection:'column',gap:0,position:'relative',transition:'transform .15s, box-shadow .15s',boxShadow:pkg.badge?`0 0 28px ${pkg.accent}20`:''}}
+              onMouseEnter={e=>{e.currentTarget.style.transform='translateY(-3px)';e.currentTarget.style.boxShadow=`0 8px 32px ${pkg.accent}30`}}
+              onMouseLeave={e=>{e.currentTarget.style.transform='none';e.currentTarget.style.boxShadow=pkg.badge?`0 0 28px ${pkg.accent}20`:''}}>
+              {pkg.badge&&(
+                <div style={{position:'absolute',top:-11,left:'50%',transform:'translateX(-50%)',background:`linear-gradient(135deg,${pkg.accent},${pkg.accent}cc)`,color:'#fff',fontSize:10,fontWeight:800,padding:'3px 14px',borderRadius:999,whiteSpace:'nowrap',boxShadow:`0 0 12px ${pkg.accent}60`}}>
+                  {pkg.badge}
+                </div>
+              )}
+              <div style={{fontWeight:800,fontSize:15,color:pkg.accent,marginBottom:8}}>{pkg.name}</div>
+              <div style={{display:'flex',alignItems:'baseline',gap:4,marginBottom:4}}>
+                <span style={{fontSize:30,fontWeight:800,color:'#fff'}}>${pkg.price}</span>
+              </div>
+              <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:16}}>
+                <Coins s={14} c="#f59e0b"/>
+                <span style={{fontWeight:700,fontSize:16,color:'#f59e0b'}}>{pkg.pts.toLocaleString()}</span>
+                <span style={{fontSize:12,color:'#64748b'}}>points</span>
+              </div>
+              <div style={{display:'flex',flexDirection:'column',gap:6,marginBottom:18,flex:1}}>
+                {pkg.features.map(f=>(
+                  <div key={f} style={{display:'flex',alignItems:'center',gap:7,fontSize:12,color:'#94a3b8'}}>
+                    <Check s={12} c={pkg.accent}/> {f}
+                  </div>
+                ))}
+              </div>
+              <button onClick={()=>setBuyPkg(pkg)} style={{width:'100%',padding:'11px',borderRadius:10,border:'none',background:pkg.badge?`linear-gradient(135deg,${pkg.accent},${pkg.accent}99)`:'transparent',borderTop:pkg.badge?'none':`1px solid ${pkg.accent}40`,color:pkg.badge?'#fff':pkg.accent,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit',transition:'all .15s',boxShadow:pkg.badge?`0 0 18px ${pkg.accent}44`:'none'}}>
+                {pkg.badge ? 'Buy Now →' : 'Get Started →'}
+              </button>
+            </div>
+          ))}
+        </div>
+        <div style={{textAlign:'center',marginTop:14,fontSize:11,color:'#374151'}}>
+          ⚡ Demo mode — purchases are simulated. Points are added immediately to your account.
+        </div>
+      </div>
+
+      {buyPkg&&<BuyModal pkg={buyPkg} user={user} setUser={setUser} onClose={()=>setBuyPkg(null)}/>}
+    </div>
+  );
+}
+
+// ── Earn Tab ──────────────────────────────────────────────────────────────────
+function EarnTab({ user, setUser, campaigns, activeTask, setActiveTask }) {
+  const [timeLeft,setTimeLeft]=useState(0);
+  const [timerDone,setTimerDone]=useState(false);
+  const [subStep,setSubStep]=useState('idle');
+  const [comment,setComment]=useState('');
+  const [claimed,setClaimed]=useState(false);
+  const intRef=useRef(null);
+
+  useEffect(()=>{
+    if(!activeTask)return;
+    setTimeLeft(activeTask.watchDuration);setTimerDone(false);setSubStep('idle');setComment('');setClaimed(false);
+  },[activeTask?.id]);
+
+  useEffect(()=>{
+    if(!activeTask||timerDone||claimed){clearInterval(intRef.current);return;}
+    clearInterval(intRef.current);
+    intRef.current=setInterval(()=>setTimeLeft(t=>Math.max(0,t-1)),1000);
+    return()=>clearInterval(intRef.current);
+  },[activeTask?.id,timerDone,claimed]);
+
+  useEffect(()=>{if(timeLeft===0&&activeTask&&!timerDone)setTimerDone(true);},[timeLeft]);
+
+  function handleClaim(){
+    const d=TASK_DEFS[activeTask.taskType];
+    const users=DB.users(); const idx=users.findIndex(u=>u.id===user.id);
+    if(idx>=0){users[idx].points+=d.pts;DB.saveUsers(users);setUser({...user,points:user.points+d.pts});}
+    DB.pushHist({id:`h_${Date.now()}`,userId:user.id,campaignId:activeTask.id,campaignTitle:activeTask.title,taskType:activeTask.taskType,pts:d.pts,earnedAt:Date.now()});
+    setClaimed(true);
+  }
+  function handleSubscribeOpen(){
+    const ch=activeTask.channelUrl||activeTask.url;
+    window.open(ch.includes('?')?`${ch}&sub_confirmation=1`:`${ch}?sub_confirmation=1`,'_blank');
+    setSubStep('opened');
+  }
+  function handleBack(){clearInterval(intRef.current);setActiveTask(null);}
+
+  const canClaim=timerDone&&!claimed&&(activeTask?.taskType==='watch'?true:activeTask?.taskType==='subscribe'?subStep==='done':activeTask?.taskType==='comment'?comment.trim().length>0:false);
+
+  // Task selection
+  if(!activeTask){
+    const avail=campaigns.filter(c=>c.delivered<c.target);
+    return (
+      <div className="fade-up" style={{display:'flex',flexDirection:'column',gap:16}}>
+        <div>
+          <h2 style={{fontSize:17,fontWeight:800,color:'#fff',marginBottom:4}}>Choose a Task to Earn</h2>
+          <p style={{fontSize:13,color:'#64748b'}}>Pick a task below. Harder tasks reward more points.</p>
+        </div>
+        <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+          {Object.entries(TASK_DEFS).map(([k,d])=>(
+            <div key={k} style={{display:'flex',alignItems:'center',gap:6,background:'#1a1a2e',border:`1px solid ${d.accent}25`,borderRadius:8,padding:'7px 12px',flex:1,minWidth:150}}>
+              <span style={{fontSize:17}}>{d.emoji}</span>
+              <div><div style={{fontSize:11,fontWeight:700,color:d.accent}}>{d.label}</div><div style={{fontSize:10,color:'#4b5563'}}>{d.pts} pts</div></div>
+            </div>
+          ))}
+        </div>
+        <div style={{display:'flex',flexDirection:'column',gap:10}}>
+          {avail.length===0
+            ? <div style={{textAlign:'center',padding:'40px 0',color:'#4b5563',fontSize:13}}>No tasks available right now.</div>
+            : avail.map(c=>(
+              <div key={c.id} className="fade-up" style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,.06)',borderRadius:14,padding:'15px 18px',display:'flex',flexDirection:'column',gap:10}}
+                onMouseEnter={e=>{const d=TASK_DEFS[c.taskType];e.currentTarget.style.borderColor=`${d.accent}50`;}}
+                onMouseLeave={e=>{e.currentTarget.style.borderColor='rgba(255,255,255,.06)';}}>
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                  <TaskBadge taskType={c.taskType}/>
+                  <span style={{fontWeight:800,fontSize:16,color:TASK_DEFS[c.taskType].accent}}>+{TASK_DEFS[c.taskType].pts} pts</span>
+                </div>
+                <div>
+                  <div style={{fontWeight:700,fontSize:14,color:'#fff',marginBottom:3}}>{c.title}</div>
+                  <div style={{display:'flex',alignItems:'center',gap:4,color:'#64748b',fontSize:12}}><ExtLink s={10} c="#64748b"/>{c.url.slice(0,46)}{c.url.length>46?'…':''}</div>
+                </div>
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                  <span style={{display:'flex',alignItems:'center',gap:5,color:'#64748b',fontSize:12}}><Clock s={12} c="#64748b"/>Watch {c.watchDuration}s</span>
+                  <button onClick={()=>setActiveTask(c)} style={{display:'flex',alignItems:'center',gap:6,padding:'7px 14px',borderRadius:8,border:'none',background:`${TASK_DEFS[c.taskType].accent}dd`,color:'#fff',fontWeight:700,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>
+                    <Play s={11} c="#fff" fill="#fff"/> Start Task
+                  </button>
+                </div>
+              </div>
+            ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Task execution
+  const d=TASK_DEFS[activeTask.taskType], videoId=extractVideoId(activeTask.url)||'dQw4w9WgXcQ';
+  return (
+    <div className="fade-up" style={{display:'flex',flexDirection:'column',gap:16}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+        <button onClick={handleBack} style={{display:'flex',alignItems:'center',gap:6,background:'transparent',border:'1px solid rgba(255,255,255,.1)',borderRadius:8,padding:'6px 12px',color:'#94a3b8',cursor:'pointer',fontFamily:'inherit',fontSize:12}}
+          onMouseEnter={e=>{e.currentTarget.style.color='#fff';e.currentTarget.style.borderColor='rgba(255,255,255,.3)'}}
+          onMouseLeave={e=>{e.currentTarget.style.color='#94a3b8';e.currentTarget.style.borderColor='rgba(255,255,255,.1)'}}>
+          <ArrowL s={13} c="currentColor"/> Back
+        </button>
+        <div style={{display:'flex',alignItems:'center',gap:10}}><TaskBadge taskType={activeTask.taskType}/><span style={{fontWeight:800,fontSize:15,color:d.accent}}>+{d.pts} pts</span></div>
+      </div>
+      <div style={{textAlign:'center'}}>
+        <div style={{fontWeight:700,fontSize:15,color:'#fff',marginBottom:3}}>{activeTask.title}</div>
+        <div style={{fontSize:12,color:'#64748b'}}>{d.desc}</div>
+      </div>
+      <div style={{borderRadius:14,overflow:'hidden',border:'1px solid rgba(255,255,255,.06)',boxShadow:`0 0 48px ${d.accent}18`,aspectRatio:'16/9',background:'#0d0d1f'}}>
+        <iframe key={videoId} src={`https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1`} style={{width:'100%',height:'100%',border:'none'}} allow="autoplay; encrypted-media" allowFullScreen/>
+      </div>
+      <div style={{background:'#13132a',borderRadius:14,border:'1px solid rgba(255,255,255,.06)',padding:'20px 22px',display:'flex',gap:24,alignItems:'flex-start',flexWrap:'wrap'}}>
+        <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:6}}>
+          <TimerRing timeLeft={timeLeft} totalTime={activeTask.watchDuration} done={timerDone}/>
+          <span style={{fontSize:10,color:timerDone?'#4ade80':'#64748b',fontWeight:600,textTransform:'uppercase',letterSpacing:'0.05em'}}>{timerDone?'✓ Done':'Watch Timer'}</span>
+        </div>
+        <div style={{flex:1,minWidth:200,display:'flex',flexDirection:'column',gap:12}}>
+          {activeTask.taskType==='watch'&&(
+            <div style={{fontSize:13,color:timerDone?'#4ade80':'#94a3b8',display:'flex',alignItems:'center',gap:6}}>
+              {timerDone?<><Check s={14} c="#4ade80"/> Watch complete — claim your reward!</>:<>Keep watching…</>}
+            </div>
+          )}
+          {activeTask.taskType==='subscribe'&&(
+            <div style={{display:'flex',flexDirection:'column',gap:10}}>
+              <div style={{fontSize:13,color:timerDone?'#fff':'#4b5563',display:'flex',alignItems:'center',gap:6}}>
+                <Bell s={13} c={timerDone?'#a855f7':'#4b5563'}/>{timerDone?'Now subscribe to the channel:':` Subscribe unlocks in ${timeLeft}s…`}
+              </div>
+              {subStep==='idle'&&(
+                <button disabled={!timerDone} onClick={handleSubscribeOpen} className={timerDone?'pulse':''}
+                  style={{padding:'11px 16px',borderRadius:10,border:'none',fontFamily:'inherit',cursor:timerDone?'pointer':'not-allowed',fontWeight:700,fontSize:13,display:'flex',alignItems:'center',justifyContent:'center',gap:8,background:timerDone?'linear-gradient(135deg,#ff0000,#cc0000)':'#1f2937',color:timerDone?'#fff':'#4b5563',boxShadow:timerDone?'0 0 20px rgba(255,0,0,.3)':'none',transition:'all .2s'}}>
+                  <Youtube s={16} c="white"/> {timerDone?'▶ Subscribe on YouTube':`Locked — watch ${timeLeft}s more`}
+                </button>
+              )}
+              {subStep==='opened'&&(
+                <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                  <div style={{fontSize:12,color:'#94a3b8',padding:'8px 12px',background:'rgba(168,85,247,.08)',borderRadius:8,border:'1px solid rgba(168,85,247,.2)'}}>✅ YouTube opened. Subscribe, then confirm below.</div>
+                  <div style={{display:'flex',gap:8}}>
+                    <button onClick={()=>setSubStep('done')} style={{flex:1,padding:'10px',borderRadius:9,border:'none',background:'linear-gradient(135deg,#16a34a,#15803d)',color:'#fff',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>
+                      <Check s={13} c="#fff"/> Yes, Subscribed
+                    </button>
+                    <button onClick={()=>setSubStep('idle')} style={{padding:'10px 14px',borderRadius:9,border:'1px solid rgba(255,255,255,.1)',background:'transparent',color:'#94a3b8',fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>Not yet</button>
+                  </div>
+                </div>
+              )}
+              {subStep==='done'&&(
+                <div style={{fontSize:13,color:'#4ade80',display:'flex',alignItems:'center',gap:6,padding:'10px 14px',background:'rgba(22,163,74,.12)',borderRadius:9,border:'1px solid rgba(74,222,128,.2)'}}>
+                  <Check s={14} c="#4ade80"/> Subscribed! Claim your points.
+                </div>
+              )}
+            </div>
+          )}
+          {activeTask.taskType==='comment'&&(
+            <div style={{display:'flex',flexDirection:'column',gap:8}}>
+              <div style={{fontSize:13,color:timerDone?'#fff':'#4b5563',display:'flex',alignItems:'center',gap:6}}>
+                <MsgSq s={13} c={timerDone?'#f59e0b':'#4b5563'}/>{timerDone?'Write your comment:':` Comment unlocks in ${timeLeft}s…`}
+              </div>
+              <textarea disabled={!timerDone} value={comment} onChange={e=>setComment(e.target.value)}
+                placeholder={timerDone?'Write a genuine comment…':'Waiting for watch timer…'} rows={3}
+                style={{padding:'10px 12px',borderRadius:8,border:`1px solid ${timerDone&&comment.trim()?'rgba(245,158,11,.5)':'rgba(255,255,255,.1)'}`,background:timerDone?'#0f0f1a':'#0a0a14',color:timerDone?'#fff':'#374151',fontSize:13,outline:'none',width:'100%'}}/>
+            </div>
+          )}
+          <button onClick={handleClaim} disabled={!canClaim} style={{padding:'12px',borderRadius:11,border:'none',fontFamily:'inherit',fontWeight:700,fontSize:15,marginTop:4,cursor:canClaim?'pointer':'not-allowed',background:claimed?'rgba(22,163,74,.2)':canClaim?`linear-gradient(135deg,${d.accent},${d.accent}99)`:'#1f2937',color:claimed?'#4ade80':canClaim?'#fff':'#4b5563',boxShadow:canClaim?`0 0 22px ${d.accent}44`:'none',transition:'all .2s'}}>
+            {claimed?`✓ Claimed +${d.pts} pts!`:`Claim ${d.pts} Points`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Promote Tab ───────────────────────────────────────────────────────────────
+function PromoteTab({ user, setUser, campaigns, setCampaigns }) {
+  const [url,setUrl]=useState('');
+  const [chan,setChan]=useState('');
+  const [type,setType]=useState('watch');
+  const [dur,setDur]=useState(30);
+  const [views,setViews]=useState(100);
+  const d=TASK_DEFS[type], cost=views*d.costPerView;
+  const can=url.trim().length>0&&(type==='watch'||chan.trim().length>0)&&user.points>=cost;
+
+  function launch(){
+    if(!can)return;
+    const c={id:`c_${Date.now()}`,ownerId:user.id,url:url.trim(),channelUrl:chan.trim()||url.trim(),
+      title:`My Video #${campaigns.filter(c=>c.ownerId===user.id).length+1}`,target:views,delivered:0,taskType:type,watchDuration:dur,createdAt:Date.now()};
+    const updated=[c,...campaigns]; setCampaigns(updated); DB.saveCamps(updated);
+    const users=DB.users(); const idx=users.findIndex(u=>u.id===user.id);
+    if(idx>=0){users[idx].points-=cost;DB.saveUsers(users);setUser({...user,points:user.points-cost});}
+    setUrl('');setChan('');setType('watch');setDur(30);setViews(100);
+  }
+  const lbl=(t,s)=><div style={{marginBottom:8}}><label style={{fontSize:13,color:'#94a3b8',fontWeight:600}}>{t}</label>{s&&<span style={{fontSize:11,color:'#4b5563',marginLeft:6}}>{s}</span>}</div>;
+  const ti=(val,set,ph)=><input type="text" value={val} onChange={e=>set(e.target.value)} placeholder={ph} style={{width:'100%',padding:'11px 14px',borderRadius:9,border:'1px solid rgba(255,255,255,.1)',background:'#0f0f1a',color:'#fff',fontSize:13,outline:'none',fontFamily:'inherit',marginBottom:16}}/>;
+  const mine=campaigns.filter(c=>c.ownerId===user.id);
+
+  return (
+    <div className="fade-up" style={{display:'flex',flexDirection:'column',gap:22}}>
+      <div style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,.06)',borderRadius:16,padding:22}}>
+        <h2 style={{fontSize:17,fontWeight:700,color:'#fff',marginBottom:18,display:'flex',alignItems:'center',gap:8}}><Rocket s={17} c="#a855f7"/> Launch a Campaign</h2>
+        {lbl('YouTube Video URL','(required)')}{ti(url,setUrl,'https://youtube.com/watch?v=...')}
+        {lbl('Your Channel URL',type!=='watch'?'(required)':'(optional)')}{ti(chan,setChan,'https://youtube.com/@YourChannel')}
+        <div style={{marginBottom:18}}>
+          {lbl('Task Type for Viewers')}
+          <div style={{display:'flex',flexDirection:'column',gap:7}}>
+            {Object.entries(TASK_DEFS).map(([k,td])=>{const a=type===k;return(
+              <div key={k} onClick={()=>setType(k)} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 14px',borderRadius:9,border:`1px solid ${a?td.accent+'60':'rgba(255,255,255,.07)'}`,background:a?`${td.accent}10`:'#0f0f1a',cursor:'pointer',transition:'all .15s'}}>
+                <div style={{display:'flex',alignItems:'center',gap:9}}><span style={{fontSize:18}}>{td.emoji}</span><div><div style={{fontWeight:700,fontSize:13,color:a?td.accent:'#fff'}}>{td.label}</div><div style={{fontSize:11,color:'#4b5563'}}>{td.desc}</div></div></div>
+                <div style={{textAlign:'right'}}><div style={{fontWeight:800,fontSize:13,color:a?td.accent:'#64748b'}}>{td.costPerView} pts/view</div><div style={{fontSize:10,color:'#4b5563'}}>earns {td.pts} pts</div></div>
+              </div>
+            );})}
+          </div>
+        </div>
+        <div style={{marginBottom:18}}>
+          <div style={{display:'flex',justifyContent:'space-between',marginBottom:8}}>
+            <label style={{fontSize:13,color:'#94a3b8',fontWeight:600,display:'flex',alignItems:'center',gap:5}}><Clock s={12} c="#94a3b8"/> Watch Time</label>
+            <span style={{fontSize:13,fontWeight:700,color:'#22d3ee'}}>{dur}s</span>
+          </div>
+          <input type="range" min={15} max={120} step={15} value={dur} onChange={e=>setDur(Number(e.target.value))}/>
+          <div style={{display:'flex',justifyContent:'space-between',marginTop:4,fontSize:10,color:'#374151'}}>{[15,30,45,60,75,90,105,120].map(v=><span key={v}>{v}s</span>)}</div>
+        </div>
+        <div style={{marginBottom:18}}>
+          <div style={{display:'flex',justifyContent:'space-between',marginBottom:8}}>
+            <label style={{fontSize:13,color:'#94a3b8',fontWeight:600,display:'flex',alignItems:'center',gap:5}}><Eye s={12} c="#94a3b8"/> Views to Buy</label>
+            <span style={{fontSize:13,fontWeight:700,color:'#22d3ee'}}>{views}</span>
+          </div>
+          <input type="range" min={10} max={500} step={10} value={views} onChange={e=>setViews(Number(e.target.value))}/>
+          <div style={{display:'flex',justifyContent:'space-between',marginTop:4,fontSize:10,color:'#374151'}}><span>10</span><span>500</span></div>
+        </div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:'#0f0f1a',borderRadius:9,padding:'11px 14px',marginBottom:18}}>
+          <div><div style={{fontSize:11,color:'#4b5563'}}>Total cost</div><div style={{fontSize:11,color:'#374151'}}>{views} × {d.costPerView} pts</div></div>
+          <span style={{fontWeight:800,fontSize:20,color:cost>user.points?'#ef4444':d.accent,display:'flex',alignItems:'center',gap:6}}><Coins s={15} c="#f59e0b"/>{cost.toLocaleString()} pts</span>
+        </div>
+        <button onClick={launch} disabled={!can} style={{width:'100%',padding:'13px',borderRadius:11,border:'none',fontFamily:'inherit',fontWeight:700,fontSize:15,cursor:can?'pointer':'not-allowed',background:can?`linear-gradient(135deg,${d.accent},${d.accent}99)`:'#1f2937',color:can?'#fff':'#4b5563',boxShadow:can?`0 0 24px ${d.accent}44`:'none',transition:'all .2s'}}>
+          {!url.trim()?'Paste a URL to continue':(type!=='watch'&&!chan.trim())?'Add your channel URL':user.points<cost?'Not enough points':`🚀 Launch — ${cost.toLocaleString()} pts`}
+        </button>
+      </div>
+      {mine.length>0&&(
+        <div>
+          <h3 style={{fontSize:14,fontWeight:700,color:'#fff',marginBottom:12,display:'flex',alignItems:'center',gap:7}}><BarChart s={14} c="#22d3ee"/> My Active Campaigns</h3>
+          <div style={{display:'flex',flexDirection:'column',gap:10}}>{mine.map(c=><CampaignCard key={c.id} campaign={c}/>)}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Dashboard Tab ─────────────────────────────────────────────────────────────
+function DashboardTab({ user, campaigns }) {
+  const history=DB.history().filter(h=>h.userId===user.id);
+  const mine=campaigns.filter(c=>c.ownerId===user.id);
+  const totalEarned=history.reduce((s,h)=>s+h.pts,0);
+  const active=mine.filter(c=>c.delivered<c.target).length;
+  const icons={watch:'👁️',subscribe:'🔔',comment:'💬'};
+  return (
+    <div className="fade-up" style={{display:'flex',flexDirection:'column',gap:22}}>
+      <div style={{background:'linear-gradient(135deg,#1e1140,#1a1a2e)',border:'1px solid rgba(168,85,247,.2)',borderRadius:14,padding:'20px 22px',display:'flex',alignItems:'center',gap:16}}>
+        <div style={{width:52,height:52,borderRadius:999,background:'linear-gradient(135deg,#a855f7,#22d3ee)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,fontWeight:800,color:'#fff',flexShrink:0}}>{initials(user.name)}</div>
+        <div><div style={{fontSize:17,fontWeight:800,color:'#fff'}}>Welcome back, {user.name.split(' ')[0]}! 👋</div><div style={{fontSize:12,color:'#94a3b8',marginTop:2}}>Member since {fmtDate(user.createdAt)}</div></div>
+        <div style={{marginLeft:'auto',textAlign:'right'}}><div style={{fontSize:22,fontWeight:800,color:'#f59e0b',display:'flex',alignItems:'center',gap:6}}><Coins s={18} c="#f59e0b"/>{user.points.toLocaleString()}</div><div style={{fontSize:11,color:'#64748b'}}>current balance</div></div>
+      </div>
+      <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
+        {[['🏆','Total Pts Earned',totalEarned.toLocaleString(),'#f59e0b'],['✅','Tasks Completed',history.length,'#4ade80'],['🚀','Active Campaigns',active,'#a855f7'],['📅','Total Campaigns',mine.length,'#22d3ee']].map(([ic,lb,val,col])=>(
+          <div key={lb} style={{flex:1,minWidth:130,background:'#1a1a2e',border:`1px solid ${col}25`,borderRadius:12,padding:'16px',textAlign:'center'}}>
+            <div style={{fontSize:24,marginBottom:6}}>{ic}</div>
+            <div style={{fontSize:22,fontWeight:800,color:col}}>{val}</div>
+            <div style={{fontSize:11,color:'#64748b',marginTop:3}}>{lb}</div>
+          </div>
+        ))}
+      </div>
+      <div>
+        <h3 style={{fontSize:14,fontWeight:700,color:'#fff',marginBottom:12,display:'flex',alignItems:'center',gap:7}}><Trophy s={14} c="#f59e0b"/> Earnings History</h3>
+        {history.length===0
+          ? <div style={{textAlign:'center',padding:'28px 0',color:'#374151',fontSize:13}}>No earnings yet. Complete tasks to start earning!</div>
+          : <div style={{display:'flex',flexDirection:'column',gap:8}}>
+              {history.slice(0,20).map(h=>(
+                <div key={h.id} style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,.05)',borderRadius:10,padding:'11px 14px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:10}}>
+                  <div style={{display:'flex',alignItems:'center',gap:10}}>
+                    <span style={{fontSize:18}}>{icons[h.taskType]||'⚡'}</span>
+                    <div><div style={{fontSize:13,fontWeight:600,color:'#fff'}}>{h.campaignTitle}</div><div style={{fontSize:11,color:'#64748b',marginTop:1}}>{TASK_DEFS[h.taskType]?.label} · {fmtDate(h.earnedAt)} {fmtTime(h.earnedAt)}</div></div>
+                  </div>
+                  <span style={{fontWeight:800,fontSize:14,color:'#4ade80',whiteSpace:'nowrap'}}>+{h.pts} pts</span>
+                </div>
+              ))}
+            </div>}
+      </div>
+      <div>
+        <h3 style={{fontSize:14,fontWeight:700,color:'#fff',marginBottom:12,display:'flex',alignItems:'center',gap:7}}><BarChart s={14} c="#22d3ee"/> My Campaign History</h3>
+        {mine.length===0
+          ? <div style={{textAlign:'center',padding:'28px 0',color:'#374151',fontSize:13}}>No campaigns yet. Go to Promote to launch one!</div>
+          : <div style={{display:'flex',flexDirection:'column',gap:8}}>{mine.map(c=>(
+              <div key={c.id}><CampaignCard campaign={c} compact/><div style={{fontSize:10,color:'#374151',marginTop:3,paddingLeft:4}}>Created {fmtDate(c.createdAt)}</div></div>
+            ))}</div>}
+      </div>
+    </div>
+  );
+}
+
+// ── App ───────────────────────────────────────────────────────────────────────
+function App() {
+  const [user,setUser]=useState(null);
+  const [tab,setTab]=useState('discover');
+  const [camps,setCamps]=useState(DB.campaigns()||SEED_CAMPAIGNS);
+  const [task,setTask]=useState(null);
+
+  useEffect(()=>{
+    const id=DB.currentId();
+    if(id){const u=DB.users().find(u=>u.id===id);if(u)setUser(u);}
+  },[]);
+
+  function setActiveTask(t){setTask(t);if(t)setTab('earn');}
+
+  if(!user) return <LoginScreen onLogin={u=>{setUser(u);setTab('discover');}}/>;
+
+  return (
+    <div style={{background:'#0f0f1a',minHeight:'100vh',color:'#fff'}}>
+      <Header user={user} points={user.points} onLogout={()=>{DB.logout();setUser(null);setTab('discover');setTask(null);}}/>
+      <div style={{maxWidth:960,margin:'0 auto',padding:'0 20px 64px'}}>
+        <TabBar activeTab={tab} setActiveTab={t=>{setTab(t);if(t!=='earn')setTask(null);}}/>
+        <div style={{marginTop:22}}>
+          {tab==='discover'  && <DiscoverTab user={user} setUser={setUser} campaigns={camps} setActiveTab={setTab} setActiveTask={setActiveTask}/>}
+          {tab==='earn'      && <EarnTab user={user} setUser={setUser} campaigns={camps} activeTask={task} setActiveTask={setActiveTask}/>}
+          {tab==='promote'   && <PromoteTab user={user} setUser={setUser} campaigns={camps} setCampaigns={setCamps}/>}
+          {tab==='dashboard' && <DashboardTab user={user} campaigns={camps}/>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
