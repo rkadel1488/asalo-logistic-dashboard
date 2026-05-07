@@ -248,7 +248,7 @@ function EarnTab({ points, setPoints, videoIndex, setVideoIndex, timeLeft, setTi
 // ── CampaignCard Component ────────────────────────────────────────────────────────
 
 function CampaignCard({ campaign }) {
-  const pct = Math.round((campaign.delivered / campaign.target) * 100);
+  const pct = Math.min(Math.round((campaign.delivered / campaign.target) * 100), 100);
 
   return (
     <div style={{
@@ -315,6 +315,7 @@ function PromoteTab({ points, setPoints, campaigns, setCampaigns, urlInput, setU
   const canLaunch   = urlInput.trim().length > 0 && points >= cost;
 
   function handleLaunch() {
+    if (!canLaunch) return;
     const newCampaign = {
       id:        `c${Date.now()}`,
       url:       urlInput.trim(),
