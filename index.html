@@ -133,6 +133,26 @@ async function fetchEarnHistory(userId) {
     .select('*').eq('user_id', userId).order('earned_at', { ascending: false }).limit(100);
   return data || [];
 }
+async function fetchPurchases(userId) {
+  const { data } = await supa.from('purchases')
+    .select('*').eq('user_id', userId).order('purchased_at', { ascending: false });
+  return data || [];
+}
+async function savePurchase(userId, pkg) {
+  await supa.from('purchases').insert({
+    user_id: userId, package_id: pkg.id, package_name: pkg.name,
+    pts: pkg.pts, price: pkg.price,
+  });
+  await supa.from('profiles').update({
+    total_purchased: supa.rpc ? undefined : undefined, // incremented server-side below
+  }).eq('id', userId);
+  // Increment total_purchased in profiles
+  await supa.rpc('increment_purchased', { uid: userId, amount: pkg.pts }).catch(() =>
+    supa.from('profiles').select('total_purchased').eq('id', userId).single().then(({data}) =>
+      supa.from('profiles').update({ total_purchased: (data?.total_purchased||0) + pkg.pts }).eq('id', userId)
+    )
+  );
+}
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const TASK_DEFS = {
@@ -289,12 +309,13 @@ function LoginScreen({ onLogin }) {
 }
 
 // ── Header ────────────────────────────────────────────────────────────────────
-function Header({ user, onLogout }) {
+function Header({ user, onLogout, onLogoClick }) {
   const [open,setOpen]=useState(false);
   return (
     <header style={{background:'#13132a',borderBottom:'1px solid rgba(255,255,255,.08)',padding:'0 24px',position:'sticky',top:0,zIndex:100}}>
       <div style={{maxWidth:960,margin:'0 auto',height:62,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-        <div style={{display:'flex',alignItems:'center',gap:10}}>
+        <div onClick={onLogoClick} style={{display:'flex',alignItems:'center',gap:10,cursor:'pointer',transition:'opacity .15s'}}
+          onMouseEnter={e=>e.currentTarget.style.opacity='.8'} onMouseLeave={e=>e.currentTarget.style.opacity='1'}>
           <div style={{width:30,height:30,borderRadius:7,background:'linear-gradient(135deg,#a855f7,#22d3ee)',display:'flex',alignItems:'center',justifyContent:'center'}}>
             <Play s={14} c="#fff" fill="#fff"/>
           </div>
@@ -419,7 +440,14 @@ function CheckoutPage({ pkg, user, onUpdatePoints, onBack, onSuccess }) {
     msgs.forEach((msg,i)=>setTimeout(()=>setSteps(p=>[...p,msg]),i*500));
     setTimeout(async()=>{
       const newPts=user.points+pkg.pts;
-      await supa.from('profiles').update({points:newPts}).eq('id',user.id);
+      // Save purchase record + update balance in parallel
+      await Promise.all([
+        supa.from('profiles').update({ points: newPts }).eq('id', user.id),
+        supa.from('purchases').insert({
+          user_id: user.id, package_id: pkg.id, package_name: pkg.name,
+          pts: pkg.pts, price: pkg.price,
+        }),
+      ]).catch(()=>{});
       onUpdatePoints(newPts);
       setPhase('success');
     },msgs.length*500+400);
@@ -909,59 +937,139 @@ function PromoteTab({ user, campaigns, onLaunch }) {
 
 // ── Dashboard Tab ─────────────────────────────────────────────────────────────
 function DashboardTab({ user, campaigns }) {
-  const [history, setHistory] = useState(null); // null = loading
-  const mine=campaigns.filter(c=>c.ownerId===user.id);
+  const [history,   setHistory]   = useState(null);
+  const [purchases, setPurchases] = useState(null);
+  const mine   = campaigns.filter(c=>c.ownerId===user.id);
+  const active = mine.filter(c=>c.delivered<c.target).length;
 
   useEffect(()=>{
     fetchEarnHistory(user.id).then(setHistory);
+    fetchPurchases(user.id).then(setPurchases);
   },[user.id]);
 
-  const totalEarned=(history||[]).reduce((s,h)=>s+h.pts,0);
-  const active=mine.filter(c=>c.delivered<c.target).length;
+  const totalEarned    = (history||[]).reduce((s,h)=>s+h.pts,0);
+  const totalPurchased = (purchases||[]).reduce((s,p)=>s+p.pts,0);
+  const totalSpent     = mine.reduce((s,c)=>s+(c.target*(TASK_DEFS[c.taskType]?.costPerView||5)),0);
   const icons={watch:'👁️',subscribe:'🔔',comment:'💬'};
+  const Loader = ()=><div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,padding:'28px 0',color:'#374151',fontSize:13}}><div className="spinner" style={{width:14,height:14}}/> Loading…</div>;
 
   return (
-    <div className="fade-up" style={{display:'flex',flexDirection:'column',gap:22}}>
-      <div style={{background:'linear-gradient(135deg,#1e1140,#1a1a2e)',border:'1px solid rgba(168,85,247,.2)',borderRadius:14,padding:'20px 22px',display:'flex',alignItems:'center',gap:16}}>
-        <div style={{width:52,height:52,borderRadius:999,background:'linear-gradient(135deg,#a855f7,#22d3ee)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,fontWeight:800,color:'#fff',flexShrink:0}}>{initials(user.name)}</div>
-        <div><div style={{fontSize:17,fontWeight:800,color:'#fff'}}>Welcome back, {(user.name||'').split(' ')[0]}! 👋</div><div style={{fontSize:12,color:'#94a3b8',marginTop:2}}>Member since {fmtDate(user.created_at||Date.now())} · <span style={{color:'#3ecf8e'}}>✓ Supabase account</span></div></div>
-        <div style={{marginLeft:'auto',textAlign:'right'}}><div style={{fontSize:22,fontWeight:800,color:'#f59e0b',display:'flex',alignItems:'center',gap:6}}><Coins s={18} c="#f59e0b"/>{(user.points||0).toLocaleString()}</div><div style={{fontSize:11,color:'#64748b'}}>current balance</div></div>
+    <div className="fade-up" style={{display:'flex',flexDirection:'column',gap:24}}>
+
+      {/* ── Profile Card ── */}
+      <div style={{background:'linear-gradient(135deg,#1a0f2e 0%,#0f1a1a 100%)',border:'1px solid rgba(168,85,247,.25)',borderRadius:18,padding:'28px 28px',position:'relative',overflow:'hidden'}}>
+        <div style={{position:'absolute',top:-40,right:-40,width:160,height:160,background:'radial-gradient(circle,rgba(168,85,247,.12),transparent 70%)',pointerEvents:'none'}}/>
+        <div style={{display:'flex',alignItems:'flex-start',gap:20,flexWrap:'wrap'}}>
+          {/* Avatar */}
+          <div style={{width:76,height:76,borderRadius:999,background:'linear-gradient(135deg,#a855f7,#22d3ee)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:26,fontWeight:800,color:'#fff',flexShrink:0,boxShadow:'0 0 24px rgba(168,85,247,.4)'}}>{initials(user.name)}</div>
+          {/* Info */}
+          <div style={{flex:1,minWidth:200}}>
+            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:4,flexWrap:'wrap'}}>
+              <h2 style={{fontSize:22,fontWeight:800,color:'#fff'}}>{user.name||'ViewBoost User'}</h2>
+              <span style={{background:'rgba(74,222,128,.12)',color:'#4ade80',border:'1px solid rgba(74,222,128,.25)',borderRadius:999,padding:'2px 10px',fontSize:11,fontWeight:700}}>✓ Verified</span>
+            </div>
+            <div style={{fontSize:13,color:'#64748b',marginBottom:6}}>{user.email}</div>
+            <div style={{display:'flex',gap:16,flexWrap:'wrap'}}>
+              <span style={{fontSize:12,color:'#4b5563',display:'flex',alignItems:'center',gap:5}}><Clock s={11} c="#4b5563"/> Member since {fmtDate(user.created_at||Date.now())}</span>
+              <span style={{fontSize:12,color:'#3ecf8e',display:'flex',alignItems:'center',gap:5}}>⚡ Powered by Supabase</span>
+            </div>
+          </div>
+          {/* Balance */}
+          <div style={{background:'rgba(255,255,255,.04)',border:'1px solid rgba(245,158,11,.2)',borderRadius:14,padding:'14px 20px',textAlign:'center',flexShrink:0}}>
+            <div style={{fontSize:11,color:'#64748b',marginBottom:4,textTransform:'uppercase',letterSpacing:'0.05em'}}>Current Balance</div>
+            <div style={{fontSize:32,fontWeight:800,color:'#f59e0b',display:'flex',alignItems:'center',gap:8,justifyContent:'center'}}><Coins s={22} c="#f59e0b"/>{(user.points||0).toLocaleString()}</div>
+            <div style={{fontSize:11,color:'#64748b',marginTop:4}}>points</div>
+          </div>
+        </div>
       </div>
+
+      {/* ── Points Summary ── */}
+      <div>
+        <h3 style={{fontSize:14,fontWeight:700,color:'#fff',marginBottom:12,display:'flex',alignItems:'center',gap:7}}><Coins s={14} c="#f59e0b"/> Points Details</h3>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))',gap:10}}>
+          {[
+            {icon:'💰',label:'Current Balance',val:(user.points||0).toLocaleString(),col:'#f59e0b',sub:'available to spend'},
+            {icon:'📈',label:'Total Earned',   val:`+${totalEarned.toLocaleString()}`,col:'#4ade80',sub:'from completed tasks'},
+            {icon:'🛒',label:'Total Purchased', val:`+${totalPurchased.toLocaleString()}`,col:'#22d3ee',sub:'from point packages'},
+            {icon:'📤',label:'Spent on Campaigns',val:`-${totalSpent.toLocaleString()}`,col:'#f87171',sub:'campaigns launched'},
+          ].map(s=>(
+            <div key={s.label} style={{background:'#1a1a2e',border:`1px solid ${s.col}20`,borderRadius:12,padding:'16px 14px'}}>
+              <div style={{fontSize:22,marginBottom:8}}>{s.icon}</div>
+              <div style={{fontSize:20,fontWeight:800,color:s.col,marginBottom:2}}>{s.val} <span style={{fontSize:11,color:'#64748b'}}>pts</span></div>
+              <div style={{fontSize:11,color:'#64748b',fontWeight:600}}>{s.label}</div>
+              <div style={{fontSize:10,color:'#374151',marginTop:2}}>{s.sub}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Activity Stats ── */}
       <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
-        {[['🏆','Total Pts Earned',totalEarned.toLocaleString(),'#f59e0b'],['✅','Tasks Completed',(history||[]).length,'#4ade80'],['🚀','Active Campaigns',active,'#a855f7'],['📅','Total Campaigns',mine.length,'#22d3ee']].map(([ic,lb,val,col])=>(
-          <div key={lb} style={{flex:1,minWidth:130,background:'#1a1a2e',border:`1px solid ${col}25`,borderRadius:12,padding:'16px',textAlign:'center'}}>
-            <div style={{fontSize:24,marginBottom:6}}>{ic}</div>
-            <div style={{fontSize:22,fontWeight:800,color:col}}>{val}</div>
-            <div style={{fontSize:11,color:'#64748b',marginTop:3}}>{lb}</div>
+        {[['✅','Tasks Done',(history||[]).length,'#4ade80'],['🚀','Active Campaigns',active,'#a855f7'],['📅','Total Campaigns',mine.length,'#22d3ee'],['🎯','Completion Rate',mine.length?`${Math.round(mine.filter(c=>c.delivered>=c.target).length/mine.length*100)}%`:'—','#f59e0b']].map(([ic,lb,val,col])=>(
+          <div key={lb} style={{flex:1,minWidth:120,background:'#1a1a2e',border:`1px solid ${col}20`,borderRadius:12,padding:'14px',textAlign:'center'}}>
+            <div style={{fontSize:22,marginBottom:5}}>{ic}</div>
+            <div style={{fontSize:20,fontWeight:800,color:col}}>{val}</div>
+            <div style={{fontSize:11,color:'#64748b',marginTop:2}}>{lb}</div>
           </div>
         ))}
       </div>
+
+      {/* ── Purchase History ── */}
+      <div>
+        <h3 style={{fontSize:14,fontWeight:700,color:'#fff',marginBottom:12,display:'flex',alignItems:'center',gap:7}}><ShoppingB s={14} c="#22d3ee"/> Purchase History</h3>
+        {purchases===null ? <Loader/> : purchases.length===0
+          ? <div style={{textAlign:'center',padding:'24px',background:'#1a1a2e',borderRadius:12,color:'#374151',fontSize:13}}>No purchases yet. Check the <strong style={{color:'#94a3b8'}}>Buy Points</strong> section when paid plans launch.</div>
+          : <div style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,.06)',borderRadius:14,overflow:'hidden'}}>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 120px 120px 80px',padding:'10px 16px',background:'rgba(255,255,255,.03)',borderBottom:'1px solid rgba(255,255,255,.06)',fontSize:11,fontWeight:700,color:'#4b5563',textTransform:'uppercase',letterSpacing:'0.05em'}}>
+                <span>Package</span><span style={{textAlign:'center'}}>Points</span><span style={{textAlign:'right'}}>Amount</span><span style={{textAlign:'right'}}>Date</span>
+              </div>
+              {purchases.map((p,i)=>(
+                <div key={p.id} style={{display:'grid',gridTemplateColumns:'1fr 120px 120px 80px',padding:'12px 16px',borderBottom:i<purchases.length-1?'1px solid rgba(255,255,255,.04)':'none',alignItems:'center'}}>
+                  <div style={{display:'flex',alignItems:'center',gap:10}}>
+                    <div style={{width:32,height:32,borderRadius:8,background:'linear-gradient(135deg,#a855f720,#22d3ee20)',border:'1px solid rgba(168,85,247,.2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14}}>🛒</div>
+                    <div><div style={{fontWeight:700,fontSize:13,color:'#fff'}}>{p.package_name} Pack</div><div style={{fontSize:11,color:'#64748b'}}>{fmtTime(p.purchased_at)}</div></div>
+                  </div>
+                  <div style={{textAlign:'center',fontWeight:700,fontSize:13,color:'#f59e0b',display:'flex',alignItems:'center',justifyContent:'center',gap:4}}><Coins s={11} c="#f59e0b"/>+{(p.pts||0).toLocaleString()}</div>
+                  <div style={{textAlign:'right',fontWeight:700,fontSize:13,color:'#4ade80'}}>${Number(p.price||0).toFixed(2)}</div>
+                  <div style={{textAlign:'right',fontSize:11,color:'#64748b'}}>{fmtDate(p.purchased_at)}</div>
+                </div>
+              ))}
+              <div style={{padding:'10px 16px',background:'rgba(255,255,255,.02)',borderTop:'1px solid rgba(255,255,255,.06)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <span style={{fontSize:12,color:'#64748b'}}>{purchases.length} purchase{purchases.length!==1?'s':''}</span>
+                <span style={{fontSize:13,fontWeight:800,color:'#f59e0b',display:'flex',alignItems:'center',gap:5}}><Coins s={13} c="#f59e0b"/>+{totalPurchased.toLocaleString()} pts total</span>
+              </div>
+            </div>}
+      </div>
+
+      {/* ── Earnings History ── */}
       <div>
         <h3 style={{fontSize:14,fontWeight:700,color:'#fff',marginBottom:12,display:'flex',alignItems:'center',gap:7}}><Trophy s={14} c="#f59e0b"/> Earnings History</h3>
-        {history===null
-          ? <div style={{textAlign:'center',padding:'28px 0',color:'#374151',fontSize:13,display:'flex',alignItems:'center',justifyContent:'center',gap:8}}><div className="spinner" style={{width:16,height:16}}/> Loading from Supabase…</div>
-          : history.length===0
-            ? <div style={{textAlign:'center',padding:'28px 0',color:'#374151',fontSize:13}}>No earnings yet. Complete tasks to start earning!</div>
-            : <div style={{display:'flex',flexDirection:'column',gap:8}}>
-                {history.slice(0,20).map(h=>(
-                  <div key={h.id} style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,.05)',borderRadius:10,padding:'11px 14px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:10}}>
-                    <div style={{display:'flex',alignItems:'center',gap:10}}>
-                      <span style={{fontSize:18}}>{icons[h.task_type]||'⚡'}</span>
-                      <div><div style={{fontSize:13,fontWeight:600,color:'#fff'}}>{h.campaign_title}</div><div style={{fontSize:11,color:'#64748b',marginTop:1}}>{TASK_DEFS[h.task_type]?.label} · {fmtDate(h.earned_at)} {fmtTime(h.earned_at)}</div></div>
-                    </div>
-                    <span style={{fontWeight:800,fontSize:14,color:'#4ade80',whiteSpace:'nowrap'}}>+{h.pts} pts</span>
+        {history===null ? <Loader/> : history.length===0
+          ? <div style={{textAlign:'center',padding:'24px',background:'#1a1a2e',borderRadius:12,color:'#374151',fontSize:13}}>No earnings yet. Complete tasks to start earning!</div>
+          : <div style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,.06)',borderRadius:14,overflow:'hidden'}}>
+              {history.slice(0,15).map((h,i)=>(
+                <div key={h.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,padding:'12px 16px',borderBottom:i<Math.min(history.length,15)-1?'1px solid rgba(255,255,255,.04)':'none'}}>
+                  <div style={{display:'flex',alignItems:'center',gap:10}}>
+                    <div style={{width:34,height:34,borderRadius:9,background:`${TASK_DEFS[h.task_type]?.accent||'#a855f7'}15`,border:`1px solid ${TASK_DEFS[h.task_type]?.accent||'#a855f7'}30`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:16}}>{icons[h.task_type]||'⚡'}</div>
+                    <div><div style={{fontSize:13,fontWeight:600,color:'#fff'}}>{h.campaign_title}</div><div style={{fontSize:11,color:'#64748b',marginTop:1}}>{TASK_DEFS[h.task_type]?.label} · {fmtDate(h.earned_at)} at {fmtTime(h.earned_at)}</div></div>
                   </div>
-                ))}
-              </div>}
+                  <span style={{fontWeight:800,fontSize:14,color:'#4ade80',whiteSpace:'nowrap'}}>+{h.pts} pts</span>
+                </div>
+              ))}
+              {history.length>15&&<div style={{padding:'10px 16px',textAlign:'center',fontSize:12,color:'#4b5563',borderTop:'1px solid rgba(255,255,255,.04)'}}>{history.length-15} more earnings…</div>}
+            </div>}
       </div>
+
+      {/* ── Campaign History ── */}
       <div>
-        <h3 style={{fontSize:14,fontWeight:700,color:'#fff',marginBottom:12,display:'flex',alignItems:'center',gap:7}}><BarChart s={14} c="#22d3ee"/> My Campaign History</h3>
+        <h3 style={{fontSize:14,fontWeight:700,color:'#fff',marginBottom:12,display:'flex',alignItems:'center',gap:7}}><BarChart s={14} c="#22d3ee"/> My Campaigns</h3>
         {mine.length===0
-          ? <div style={{textAlign:'center',padding:'28px 0',color:'#374151',fontSize:13}}>No campaigns yet. Go to Promote to launch one!</div>
+          ? <div style={{textAlign:'center',padding:'24px',background:'#1a1a2e',borderRadius:12,color:'#374151',fontSize:13}}>No campaigns yet. Go to Promote to launch one!</div>
           : <div style={{display:'flex',flexDirection:'column',gap:8}}>{mine.map(c=>(
               <div key={c.id}><CampaignCard campaign={c} compact/><div style={{fontSize:10,color:'#374151',marginTop:3,paddingLeft:4}}>Created {fmtDate(c.createdAt)}</div></div>
             ))}</div>}
       </div>
+
     </div>
   );
 }
@@ -1085,7 +1193,7 @@ function App() {
 
   return (
     <div style={{background:'#0f0f1a',minHeight:'100vh',color:'#fff',display:'flex',flexDirection:'column'}}>
-      <Header user={user} onLogout={()=>{ authSignOut(); setUser(null); setTab('discover'); setTask(null); }}/>
+      <Header user={user} onLogoClick={()=>{ setTab('discover'); setTask(null); }} onLogout={()=>{ authSignOut(); setUser(null); setTab('discover'); setTask(null); }}/>
       <div style={{maxWidth:960,margin:'0 auto',padding:'0 20px 0',width:'100%',flex:1}}>
         <TabBar activeTab={tab} setActiveTab={t=>{setTab(t);if(t!=='earn')setTask(null);}}/>
         <div style={{marginTop:22,paddingBottom:16}}>
