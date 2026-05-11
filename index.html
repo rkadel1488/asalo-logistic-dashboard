@@ -210,9 +210,12 @@ function LoadingScreen() {
 }
 
 // ── Login Screen ──────────────────────────────────────────────────────────────
+// Fallback profile — points deliberately omitted so a failed fetch
+// never overwrites the real DB balance with a wrong value.
 const DEFAULT_PROFILE = (nameVal, emailVal) => ({
   name: nameVal || emailVal.split('@')[0],
-  points: 2000, tasks_completed: 0, total_earned: 0,
+  points: null,          // null = "not loaded yet" — will reload from DB
+  tasks_completed: 0, total_earned: 0,
   created_at: new Date().toISOString(),
 });
 
@@ -323,7 +326,11 @@ function Header({ user, onLogout, onLogoClick }) {
         </div>
         <div style={{display:'flex',alignItems:'center',gap:12}}>
           <div style={{display:'flex',alignItems:'center',gap:6,background:'linear-gradient(135deg,#1e1140,#1a1a2e)',border:'1px solid rgba(168,85,247,.25)',borderRadius:999,padding:'5px 14px',boxShadow:'0 0 14px rgba(168,85,247,.18)'}}>
-            <Coins s={14} c="#f59e0b"/><span style={{fontWeight:700,fontSize:14,color:'#fff'}}>{(user.points||0).toLocaleString()}</span><span style={{color:'#94a3b8',fontSize:11}}>pts</span>
+            <Coins s={14} c="#f59e0b"/>
+            <span style={{fontWeight:700,fontSize:14,color:'#fff'}}>
+              {user.points==null ? '…' : (user.points).toLocaleString()}
+            </span>
+            <span style={{color:'#94a3b8',fontSize:11}}>pts</span>
           </div>
           <div style={{position:'relative'}}>
             <button onClick={()=>setOpen(o=>!o)} style={{display:'flex',alignItems:'center',gap:8,background:'#1a1a2e',border:'1px solid rgba(255,255,255,.1)',borderRadius:999,padding:'5px 12px 5px 5px',cursor:'pointer'}}>
@@ -1014,6 +1021,37 @@ function DashboardTab({ user, campaigns }) {
         ))}
       </div>
 
+      {/* ── Bonus Rewards — Coming Soon ── */}
+      <div>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
+          <h3 style={{fontSize:14,fontWeight:700,color:'#fff',display:'flex',alignItems:'center',gap:7}}>
+            🎁 Bonus Rewards
+          </h3>
+          <span style={{background:'linear-gradient(135deg,#a855f7,#7c3aed)',color:'#fff',fontSize:10,fontWeight:800,padding:'3px 12px',borderRadius:999,boxShadow:'0 0 12px rgba(168,85,247,.4)'}}>Coming Soon</span>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(190px,1fr))',gap:10}}>
+          {[
+            {icon:'📅',name:'Monthly Bonus',desc:'Earn bonus points every month just for being active',color:'#a855f7'},
+            {icon:'📆',name:'Weekly Bonus',desc:'Log in each week to collect your weekly reward',color:'#22d3ee'},
+            {icon:'👑',name:'VIP Bonus',desc:'Exclusive rewards unlocked as you level up your status',color:'#f59e0b'},
+            {icon:'🎂',name:'Birthday Bonus',desc:'A special gift of points on your birthday every year',color:'#f87171'},
+          ].map(b=>(
+            <div key={b.name} style={{background:'#1a1a2e',border:`1px solid ${b.color}20`,borderRadius:13,padding:'16px',position:'relative',overflow:'hidden'}}>
+              <div style={{position:'absolute',top:0,right:0,background:`${b.color}15`,width:60,height:60,borderRadius:'0 13px 0 60px'}}/>
+              <div style={{fontSize:26,marginBottom:8}}>{b.icon}</div>
+              <div style={{fontWeight:700,fontSize:13,color:'#fff',marginBottom:4}}>{b.name}</div>
+              <div style={{fontSize:11,color:'#64748b',lineHeight:1.5,marginBottom:10}}>{b.desc}</div>
+              <div style={{display:'inline-flex',alignItems:'center',gap:5,background:`${b.color}12`,border:`1px solid ${b.color}30`,borderRadius:999,padding:'3px 10px',fontSize:10,fontWeight:700,color:b.color}}>
+                🔒 Coming Soon
+              </div>
+            </div>
+          ))}
+        </div>
+        <div style={{marginTop:10,padding:'10px 14px',background:'rgba(168,85,247,.05)',border:'1px solid rgba(168,85,247,.12)',borderRadius:10,fontSize:12,color:'#64748b',textAlign:'center'}}>
+          Point allocations for bonus rewards will be announced soon. Stay tuned! 🚀
+        </div>
+      </div>
+
       {/* ── Purchase History ── */}
       <div>
         <h3 style={{fontSize:14,fontWeight:700,color:'#fff',marginBottom:12,display:'flex',alignItems:'center',gap:7}}><ShoppingB s={14} c="#22d3ee"/> Purchase History</h3>
@@ -1123,7 +1161,7 @@ function App() {
         const authUser = await authGetSession();
         if(authUser && mounted){
           const profile = await fetchProfile(authUser.id).catch(()=>null);
-          const def = { name: authUser.user_metadata?.name || authUser.email?.split('@')[0] || '', points:2000, tasks_completed:0, total_earned:0, created_at:new Date().toISOString() };
+          const def = { name: authUser.user_metadata?.name || authUser.email?.split('@')[0] || '', points:null, tasks_completed:0, total_earned:0, created_at:new Date().toISOString() };
           if(mounted) setUser({ id:authUser.id, email:authUser.email, ...(profile||def) });
         }
       } catch(e) {
@@ -1139,38 +1177,56 @@ function App() {
 
   function setActiveTask(t){ setTask(t); if(t) setTab('earn'); }
 
-  // Earn: optimistic UI update + parallel background saves
+  // Earn: atomic DB increment — never reads current balance, just adds to it
   function handleClaim(task, pts) {
     if(!user) return;
-    // Update UI immediately — no waiting
-    const newPts=user.points+pts, newTasks=(user.tasks_completed||0)+1, newEarned=(user.total_earned||0)+pts;
-    setUser(u=>({...u, points:newPts, tasks_completed:newTasks, total_earned:newEarned}));
-    // Save both records in parallel in the background
-    Promise.all([
-      supa.from('earn_history').insert({ user_id:user.id, campaign_id:task.id, campaign_title:task.title, task_type:task.taskType, pts }),
-      supa.from('profiles').update({ points:newPts, tasks_completed:newTasks, total_earned:newEarned }).eq('id',user.id),
-    ]).catch(err => console.error('Claim save error:', err));
+    // Optimistic UI — add to whatever the display shows
+    setUser(u=>({...u,
+      points: (u.points||0)+pts,
+      tasks_completed: (u.tasks_completed||0)+1,
+      total_earned: (u.total_earned||0)+pts,
+    }));
+    // Atomic DB increment via RPC — safe even if client state was stale
+    supa.rpc('earn_points', { uid: user.id, amount: pts })
+      .then(({ data: newBalance }) => {
+        // Sync UI with DB's authoritative value
+        if(newBalance != null) setUser(u=>({...u, points: newBalance}));
+      })
+      .catch(()=>{});
+    // Log to earn_history in background
+    supa.from('earn_history').insert({
+      user_id:user.id, campaign_id:task.id,
+      campaign_title:task.title, task_type:task.taskType, pts,
+    }).catch(()=>{});
   }
 
-  // Promote: optimistic update + background save
+  // Promote: atomic DB spend — never reads current balance
   function handleLaunch(campData, cost) {
     if(!user) return;
-    // Deduct points instantly
-    const newPts=user.points-cost;
-    setUser(u=>({...u, points:newPts}));
-    // Add a temp campaign card instantly
+    // Optimistic UI deduction
+    setUser(u=>({...u, points: Math.max(0,(u.points||0)-cost)}));
+    // Add temp campaign card instantly
     const tempId=`tmp_${Date.now()}`;
-    const tempCamp={ id:tempId, ownerId:user.id, url:campData.url, channelUrl:campData.channelUrl, title:campData.title, target:campData.target, delivered:0, taskType:campData.taskType, watchDuration:campData.watchDuration, createdAt:Date.now() };
-    setCamps(prev=>[tempCamp,...prev]);
-    // Save to DB in background; replace temp card with real ID when done
-    supa.from('campaigns').insert({
-      owner_id:user.id, url:campData.url, channel_url:campData.channelUrl,
+    setCamps(prev=>[{
+      id:tempId, ownerId:user.id, url:campData.url, channelUrl:campData.channelUrl,
       title:campData.title, target:campData.target, delivered:0,
-      task_type:campData.taskType, watch_duration:campData.watchDuration
-    }).select().single().then(({data})=>{
-      if(data) setCamps(prev=>prev.map(c=>c.id===tempId?mapCamp(data):c));
-    }).catch(err=>console.error('Campaign save error:',err));
-    supa.from('profiles').update({ points:newPts }).eq('id',user.id).catch(err=>console.error('Points save error:',err));
+      taskType:campData.taskType, watchDuration:campData.watchDuration, createdAt:Date.now()
+    },...prev]);
+    // Atomic spend + save campaign in parallel
+    Promise.all([
+      supa.rpc('spend_points', { uid: user.id, amount: cost })
+        .then(({ data: newBalance }) => {
+          // Sync with authoritative DB value
+          if(newBalance != null && newBalance >= 0) setUser(u=>({...u, points: newBalance}));
+        }),
+      supa.from('campaigns').insert({
+        owner_id:user.id, url:campData.url, channel_url:campData.channelUrl,
+        title:campData.title, target:campData.target, delivered:0,
+        task_type:campData.taskType, watch_duration:campData.watchDuration,
+      }).select().single().then(({data})=>{
+        if(data) setCamps(prev=>prev.map(c=>c.id===tempId?mapCamp(data):c));
+      }),
+    ]).catch(()=>{});
   }
 
   if(initLoading) return <LoadingScreen/>;
