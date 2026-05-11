@@ -790,23 +790,78 @@ function EarnTab({ user, campaigns, onClaim, activeTask, setActiveTask }) {
   }
   function handleBack(){clearInterval(intRef.current);setActiveTask(null);}
 
+  const [filter, setFilter] = useState('all'); // 'all' | 'watch' | 'subscribe' | 'comment'
   const canClaim=timerDone&&!claimed&&(activeTask?.taskType==='watch'?true:activeTask?.taskType==='subscribe'?subStep==='done':comment.trim().length>0);
   const avail=campaigns.filter(c=>c.delivered<c.target);
+  const filtered = filter==='all' ? avail : avail.filter(c=>c.taskType===filter);
+
+  const CATS = [
+    { id:'all', label:'All Tasks', emoji:'⚡', accent:'#a855f7', count: avail.length },
+    ...Object.entries(TASK_DEFS).map(([k,d])=>({ id:k, label:d.label, emoji:d.emoji, accent:d.accent, count: avail.filter(c=>c.taskType===k).length })),
+  ];
 
   if(!activeTask) return (
-    <div className="fade-up" style={{display:'flex',flexDirection:'column',gap:16}}>
-      <div><h2 style={{fontSize:17,fontWeight:800,color:'#fff',marginBottom:4}}>Choose a Task to Earn</h2><p style={{fontSize:13,color:'#64748b'}}>Pick a task below. Your earnings are saved to your Supabase account.</p></div>
-      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-        {Object.entries(TASK_DEFS).map(([k,d])=>(
-          <div key={k} style={{display:'flex',alignItems:'center',gap:6,background:'#1a1a2e',border:`1px solid ${d.accent}25`,borderRadius:8,padding:'7px 12px',flex:1,minWidth:150}}>
-            <span style={{fontSize:17}}>{d.emoji}</span><div><div style={{fontSize:11,fontWeight:700,color:d.accent}}>{d.label}</div><div style={{fontSize:10,color:'#4b5563'}}>{d.pts} pts</div></div>
-          </div>
-        ))}
+    <div className="fade-up" style={{display:'flex',flexDirection:'column',gap:18}}>
+
+      {/* Header */}
+      <div>
+        <h2 style={{fontSize:17,fontWeight:800,color:'#fff',marginBottom:4}}>Choose a Task to Earn</h2>
+        <p style={{fontSize:13,color:'#64748b'}}>Select a category, then pick a task. All earnings are saved to your Supabase account.</p>
       </div>
+
+      {/* Category filter tabs */}
+      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+        {CATS.map(cat=>{
+          const active = filter===cat.id;
+          return (
+            <button key={cat.id} onClick={()=>setFilter(cat.id)} style={{
+              display:'flex', alignItems:'center', gap:7,
+              padding:'9px 16px', borderRadius:10, border:'none', cursor:'pointer',
+              fontFamily:'inherit', fontWeight:600, fontSize:13, transition:'all 200ms',
+              background: active ? `linear-gradient(135deg,${cat.accent},${cat.accent}99)` : '#1a1a2e',
+              color: active ? '#fff' : '#94a3b8',
+              boxShadow: active ? `0 0 18px ${cat.accent}44` : 'none',
+              outline: active ? 'none' : `1px solid ${cat.accent}20`,
+            }}>
+              <span style={{fontSize:16}}>{cat.emoji}</span>
+              {cat.label}
+              <span style={{
+                background: active ? 'rgba(255,255,255,.25)' : 'rgba(255,255,255,.07)',
+                color: active ? '#fff' : '#64748b',
+                borderRadius:999, padding:'1px 7px', fontSize:11, fontWeight:700,
+              }}>{cat.count}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Points legend for selected category */}
+      {filter !== 'all' && (
+        <div style={{
+          background: `${TASK_DEFS[filter]?.accent}10`,
+          border: `1px solid ${TASK_DEFS[filter]?.accent}30`,
+          borderRadius:10, padding:'10px 16px',
+          display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:8,
+        }}>
+          <div style={{display:'flex',alignItems:'center',gap:10}}>
+            <span style={{fontSize:22}}>{TASK_DEFS[filter]?.emoji}</span>
+            <div>
+              <div style={{fontWeight:700,fontSize:13,color:'#fff'}}>{TASK_DEFS[filter]?.label}</div>
+              <div style={{fontSize:11,color:'#64748b',marginTop:1}}>{TASK_DEFS[filter]?.desc}</div>
+            </div>
+          </div>
+          <div style={{fontWeight:800,fontSize:18,color:TASK_DEFS[filter]?.accent}}>+{TASK_DEFS[filter]?.pts} pts per task</div>
+        </div>
+      )}
+
+      {/* Task list */}
       <div style={{display:'flex',flexDirection:'column',gap:10}}>
-        {avail.length===0
-          ? <div style={{textAlign:'center',padding:'40px 0',color:'#4b5563',fontSize:13}}>No tasks available right now.</div>
-          : avail.map(c=>(
+        {filtered.length===0
+          ? <div style={{textAlign:'center',padding:'40px 0',background:'#1a1a2e',borderRadius:14,color:'#4b5563',fontSize:13}}>
+              No <strong style={{color:'#94a3b8'}}>{filter==='all'?'':TASK_DEFS[filter]?.label}</strong> tasks available right now.
+              {filter!=='all'&&<div style={{marginTop:8}}><span onClick={()=>setFilter('all')} style={{color:'#a855f7',cursor:'pointer',fontWeight:600}}>View all tasks →</span></div>}
+            </div>
+          : filtered.map(c=>(
             <div key={c.id} className="fade-up" style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,.06)',borderRadius:14,padding:'15px 18px',display:'flex',flexDirection:'column',gap:10}}
               onMouseEnter={e=>{e.currentTarget.style.borderColor=`${TASK_DEFS[c.taskType]?.accent||'#a855f7'}50`;}}
               onMouseLeave={e=>{e.currentTarget.style.borderColor='rgba(255,255,255,.06)';}}>
