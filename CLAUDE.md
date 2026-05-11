@@ -1,5 +1,16 @@
 # ASALO Logistic Dashboard — Claude Code Project
 
+## Standing Instructions
+- **After every change:** always commit and push to BOTH GitHub remotes automatically:
+  ```bash
+  git add <changed files>
+  git commit -m "..."
+  git push viewboost HEAD:main
+  git push origin HEAD:main
+  ```
+- Also copy `viewboost.html` → `index.html` before pushing (Vercel serves index.html)
+- Never wait for the user to ask — push is part of every task
+
 ## What this is
 A fully interactive logistics operations dashboard for ASALO Logistic, built as a standalone browser app (React 18 + Babel, no build step). Originally designed in Claude Design, now maintained and extended through Claude Code.
 
