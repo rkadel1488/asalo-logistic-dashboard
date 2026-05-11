@@ -130,36 +130,61 @@ function LoadingScreen() {
 }
 
 // ── Login Screen ──────────────────────────────────────────────────────────────
+const DEFAULT_PROFILE = (nameVal, emailVal) => ({
+  name: nameVal || emailVal.split('@')[0],
+  points: 2000, tasks_completed: 0, total_earned: 0,
+  created_at: new Date().toISOString(),
+});
+
 function LoginScreen({ onLogin }) {
-  const [mode,setMode]=useState('login');
-  const [name,setName]=useState('');
-  const [email,setEmail]=useState('');
-  const [pass,setPass]=useState('');
-  const [err,setErr]=useState('');
-  const [loading,setLoading]=useState(false);
+  const [mode,    setMode]    = useState('login');
+  const [name,    setName]    = useState('');
+  const [email,   setEmail]   = useState('');
+  const [pass,    setPass]    = useState('');
+  const [err,     setErr]     = useState('');
+  const [loading, setLoading] = useState(false);
+  const [confirm, setConfirm] = useState(false); // email confirmation needed
 
   async function submit(e) {
-    e.preventDefault(); setErr(''); setLoading(true);
+    e.preventDefault();
+    setErr('');
+    if (mode === 'register' && !name.trim()) { setErr('Please enter your name.'); return; }
+    setLoading(true);
     try {
       if (mode === 'login') {
         const { data, error } = await supa.auth.signInWithPassword({ email, password: pass });
         if (error) throw error;
-        const profile = await fetchProfile(data.user.id);
-        onLogin({ id: data.user.id, email: data.user.email, ...profile });
+        // Fetch profile but don't block — fall back to defaults if slow/missing
+        const profile = await Promise.race([
+          fetchProfile(data.user.id),
+          new Promise(r => setTimeout(() => r(null), 3000)),
+        ]).catch(() => null);
+        onLogin({ id: data.user.id, email: data.user.email, ...(profile || DEFAULT_PROFILE(null, email)) });
+
       } else {
-        if (!name.trim()) { setErr('Please enter your name.'); setLoading(false); return; }
         const { data, error } = await supa.auth.signUp({
           email, password: pass, options: { data: { name: name.trim() } }
         });
         if (error) throw error;
-        // Profile auto-created by DB trigger — fetch it
-        await new Promise(r => setTimeout(r, 800)); // let trigger run
-        const profile = await fetchProfile(data.user.id);
-        onLogin({ id: data.user.id, email: data.user.email, ...(profile || { name: name.trim(), points: 2000, tasks_completed: 0, total_earned: 0, created_at: new Date().toISOString() }) });
+
+        // If no session — Supabase requires email confirmation
+        if (!data.session) {
+          setConfirm(true);
+          return; // setLoading(false) runs in finally
+        }
+
+        // Give DB trigger 1s to create profile, then fetch with fallback
+        await new Promise(r => setTimeout(r, 1000));
+        const profile = await Promise.race([
+          fetchProfile(data.user.id),
+          new Promise(r => setTimeout(() => r(null), 3000)),
+        ]).catch(() => null);
+        onLogin({ id: data.user.id, email: data.user.email, ...(profile || DEFAULT_PROFILE(name.trim(), email)) });
       }
     } catch (e) {
-      setErr(e.message);
-      setLoading(false);
+      setErr(e.message || 'Something went wrong. Please try again.');
+    } finally {
+      setLoading(false); // ALWAYS runs — success, error, or timeout
     }
   }
 
@@ -180,23 +205,38 @@ function LoginScreen({ onLogin }) {
           {mode==='register'&&<div style={{marginTop:12,padding:'8px 16px',background:'linear-gradient(135deg,rgba(245,158,11,.15),rgba(168,85,247,.15))',border:'1px solid rgba(245,158,11,.35)',borderRadius:10,display:'inline-flex',alignItems:'center',gap:7,fontSize:13,color:'#f59e0b',fontWeight:700}}>🎁 Sign up &amp; get <span style={{color:'#fff'}}>2,000 points FREE!</span></div>}
         </div>
         <div style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,.07)',borderRadius:18,padding:28}}>
-          <h2 style={{fontSize:18,fontWeight:700,color:'#fff',marginBottom:22}}>{mode==='login'?'Sign in to your account':'Create your account'}</h2>
-          <form onSubmit={submit}>
-            {mode==='register'&&inp(name,setName,'text','Full name')}
-            {inp(email,setEmail,'email','Email address')}
-            {inp(pass,setPass,'password','Password')}
-            {err&&<div style={{color:'#f87171',fontSize:13,marginBottom:12,padding:'8px 12px',background:'rgba(248,113,113,.1)',borderRadius:8}}>{err}</div>}
-            <button type="submit" disabled={loading} style={{width:'100%',padding:'13px',borderRadius:11,border:'none',background:'linear-gradient(135deg,#a855f7,#7c3aed)',color:'#fff',fontWeight:700,fontSize:15,cursor:loading?'wait':'pointer',fontFamily:'inherit',boxShadow:'0 0 24px rgba(168,85,247,.35)',marginBottom:12,opacity:loading?.7:1,display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
-              {loading&&<div className="spinner" style={{width:16,height:16}}/>}
-              {loading?'Please wait…':mode==='login'?'Sign In':'Create Account'}
-            </button>
-          </form>
-          <div style={{textAlign:'center',fontSize:13,color:'#64748b'}}>
-            {mode==='login'?"Don't have an account? ":"Already have an account? "}
-            <span onClick={()=>{setMode(mode==='login'?'register':'login');setErr('');}} style={{color:'#a855f7',cursor:'pointer',fontWeight:600}}>
-              {mode==='login'?'Sign Up':'Sign In'}
-            </span>
-          </div>
+
+          {/* Email confirmation screen */}
+          {confirm ? (
+            <div style={{textAlign:'center',padding:'8px 0'}}>
+              <div style={{fontSize:48,marginBottom:14}}>📧</div>
+              <h2 style={{fontSize:20,fontWeight:800,color:'#fff',marginBottom:8}}>Check your email</h2>
+              <p style={{fontSize:13,color:'#94a3b8',lineHeight:1.6,marginBottom:20}}>We sent a confirmation link to <strong style={{color:'#fff'}}>{email}</strong>. Click it to activate your account.</p>
+              <button onClick={()=>{setConfirm(false);setMode('login');}} style={{padding:'10px 24px',borderRadius:10,border:'none',background:'linear-gradient(135deg,#a855f7,#7c3aed)',color:'#fff',fontWeight:700,fontSize:14,cursor:'pointer',fontFamily:'inherit'}}>
+                Back to Sign In
+              </button>
+            </div>
+          ) : (
+            <>
+              <h2 style={{fontSize:18,fontWeight:700,color:'#fff',marginBottom:22}}>{mode==='login'?'Sign in to your account':'Create your account'}</h2>
+              <form onSubmit={submit}>
+                {mode==='register'&&inp(name,setName,'text','Full name')}
+                {inp(email,setEmail,'email','Email address')}
+                {inp(pass,setPass,'password','Password')}
+                {err&&<div style={{color:'#f87171',fontSize:13,marginBottom:12,padding:'8px 12px',background:'rgba(248,113,113,.1)',borderRadius:8}}>{err}</div>}
+                <button type="submit" disabled={loading} style={{width:'100%',padding:'13px',borderRadius:11,border:'none',background:'linear-gradient(135deg,#a855f7,#7c3aed)',color:'#fff',fontWeight:700,fontSize:15,cursor:loading?'wait':'pointer',fontFamily:'inherit',boxShadow:'0 0 24px rgba(168,85,247,.35)',marginBottom:12,opacity:loading?.7:1,display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+                  {loading&&<div className="spinner" style={{width:16,height:16}}/>}
+                  {loading?'Please wait…':mode==='login'?'Sign In':'Create Account'}
+                </button>
+              </form>
+              <div style={{textAlign:'center',fontSize:13,color:'#64748b'}}>
+                {mode==='login'?"Don't have an account? ":"Already have an account? "}
+                <span onClick={()=>{setMode(mode==='login'?'register':'login');setErr('');setLoading(false);}} style={{color:'#a855f7',cursor:'pointer',fontWeight:600}}>
+                  {mode==='login'?'Sign Up':'Sign In'}
+                </span>
+              </div>
+            </>
+          )}
         </div>
         <div style={{textAlign:'center',marginTop:14,fontSize:11,color:'#374151'}}>Powered by Supabase Auth · data encrypted at rest</div>
       </div>
