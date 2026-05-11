@@ -167,7 +167,28 @@ const PACKAGES = [
   { id:'creator', name:'Creator',  pts:30000, price:9.99, badge:null,          accent:'#f59e0b', features:['30,000 Points','Unlimited campaigns','Dedicated support','Save 50%','Analytics','API Access'] },
 ];
 const RING_R=54, RING_CIRC=2*Math.PI*RING_R;
-function extractVideoId(url=''){const m=url.match(/(?:[?&]v=|youtu\.be\/|embed\/)([A-Za-z0-9_-]{11})/);return m?m[1]:null;}
+function extractVideoId(url='') {
+  // Handles all YouTube URL formats:
+  // - youtube.com/watch?v=ID
+  // - youtu.be/ID
+  // - youtube.com/embed/ID
+  // - youtube.com/shorts/ID  ← Shorts
+  // - youtube.com/live/ID    ← Live streams
+  // - youtube.com/v/ID       ← Old embed
+  const patterns = [
+    /[?&]v=([A-Za-z0-9_-]{11})/,
+    /youtu\.be\/([A-Za-z0-9_-]{11})/,
+    /\/embed\/([A-Za-z0-9_-]{11})/,
+    /\/shorts\/([A-Za-z0-9_-]{11})/,
+    /\/live\/([A-Za-z0-9_-]{11})/,
+    /\/v\/([A-Za-z0-9_-]{11})/,
+  ];
+  for (const p of patterns) {
+    const m = url.match(p);
+    if (m) return m[1];
+  }
+  return null;
+}
 function fmtDate(ts){return new Date(ts).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}
 function fmtTime(ts){return new Date(ts).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});}
 function initials(n=''){return n.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2)||'?';}
@@ -883,7 +904,7 @@ function EarnTab({ user, campaigns, onClaim, activeTask, setActiveTask }) {
   );
 
   const d=TASK_DEFS[activeTask.taskType]||TASK_DEFS.watch;
-  const videoId=extractVideoId(activeTask.url)||'dQw4w9WgXcQ';
+  const videoId=extractVideoId(activeTask.url);
   return (
     <div className="fade-up" style={{display:'flex',flexDirection:'column',gap:16}}>
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
@@ -896,7 +917,14 @@ function EarnTab({ user, campaigns, onClaim, activeTask, setActiveTask }) {
       </div>
       <div style={{textAlign:'center'}}><div style={{fontWeight:700,fontSize:15,color:'#fff',marginBottom:3}}>{activeTask.title}</div><div style={{fontSize:12,color:'#64748b'}}>{d.desc}</div></div>
       <div style={{borderRadius:14,overflow:'hidden',border:'1px solid rgba(255,255,255,.06)',boxShadow:`0 0 48px ${d.accent}18`,aspectRatio:'16/9',background:'#0d0d1f'}}>
-        <iframe key={videoId} src={`https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1`} style={{width:'100%',height:'100%',border:'none'}} allow="autoplay; encrypted-media" allowFullScreen/>
+        {videoId
+          ? <iframe key={videoId} src={`https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1`} style={{width:'100%',height:'100%',border:'none'}} allow="autoplay; encrypted-media" allowFullScreen/>
+          : <div style={{width:'100%',height:'100%',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:10,color:'#64748b'}}>
+              <span style={{fontSize:32}}>⚠️</span>
+              <span style={{fontSize:13}}>Could not load video. Invalid URL.</span>
+              <a href={activeTask.url} target="_blank" rel="noreferrer" style={{fontSize:12,color:'#a855f7'}}>Open on YouTube →</a>
+            </div>
+        }
       </div>
       <div style={{background:'#13132a',borderRadius:14,border:'1px solid rgba(255,255,255,.06)',padding:'20px 22px',display:'flex',gap:24,alignItems:'flex-start',flexWrap:'wrap'}}>
         <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:6}}>
