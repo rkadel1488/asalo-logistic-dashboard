@@ -639,7 +639,6 @@ function EarnTab({ user, campaigns, onClaim, activeTask, setActiveTask }) {
   const [subStep,setSubStep]=useState('idle');
   const [comment,setComment]=useState('');
   const [claimed,setClaimed]=useState(false);
-  const [claiming,setClaiming]=useState(false);
   const intRef=useRef(null);
 
   useEffect(()=>{
@@ -656,11 +655,13 @@ function EarnTab({ user, campaigns, onClaim, activeTask, setActiveTask }) {
 
   useEffect(()=>{if(timeLeft===0&&activeTask&&!timerDone)setTimerDone(true);},[timeLeft]);
 
-  async function handleClaim(){
-    setClaiming(true);
+  function handleClaim(){
+    if(!canClaim) return;
     const d=TASK_DEFS[activeTask.taskType];
-    await onClaim(activeTask, d.pts);
-    setClaimed(true); setClaiming(false);
+    // Instant UI response — no waiting for DB
+    setClaimed(true);
+    // Fire-and-forget save in background
+    onClaim(activeTask, d.pts);
   }
 
   function handleSubscribeOpen(){
@@ -670,7 +671,7 @@ function EarnTab({ user, campaigns, onClaim, activeTask, setActiveTask }) {
   }
   function handleBack(){clearInterval(intRef.current);setActiveTask(null);}
 
-  const canClaim=timerDone&&!claimed&&!claiming&&(activeTask?.taskType==='watch'?true:activeTask?.taskType==='subscribe'?subStep==='done':comment.trim().length>0);
+  const canClaim=timerDone&&!claimed&&(activeTask?.taskType==='watch'?true:activeTask?.taskType==='subscribe'?subStep==='done':comment.trim().length>0);
   const avail=campaigns.filter(c=>c.delivered<c.target);
 
   if(!activeTask) return (
@@ -745,9 +746,8 @@ function EarnTab({ user, campaigns, onClaim, activeTask, setActiveTask }) {
                 style={{padding:'10px 12px',borderRadius:8,border:`1px solid ${timerDone&&comment.trim()?'rgba(245,158,11,.5)':'rgba(255,255,255,.1)'}`,background:timerDone?'#0f0f1a':'#0a0a14',color:timerDone?'#fff':'#374151',fontSize:13,outline:'none',width:'100%'}}/>
             </div>
           )}
-          <button onClick={handleClaim} disabled={!canClaim} style={{padding:'12px',borderRadius:11,border:'none',fontFamily:'inherit',fontWeight:700,fontSize:15,marginTop:4,cursor:canClaim?'pointer':'not-allowed',background:claimed?'rgba(22,163,74,.2)':canClaim?`linear-gradient(135deg,${d.accent},${d.accent}99)`:'#1f2937',color:claimed?'#4ade80':canClaim?'#fff':'#4b5563',boxShadow:canClaim?`0 0 22px ${d.accent}44`:'none',transition:'all .2s',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
-            {claiming&&<div className="spinner" style={{width:15,height:15}}/>}
-            {claimed?`✓ Saved to Supabase! +${d.pts} pts`:claiming?'Saving…':`Claim ${d.pts} Points`}
+          <button onClick={handleClaim} disabled={!canClaim} style={{padding:'12px',borderRadius:11,border:'none',fontFamily:'inherit',fontWeight:700,fontSize:15,marginTop:4,cursor:canClaim?'pointer':'not-allowed',background:claimed?'rgba(22,163,74,.2)':canClaim?`linear-gradient(135deg,${d.accent},${d.accent}99)`:'#1f2937',color:claimed?'#4ade80':canClaim?'#fff':'#4b5563',boxShadow:canClaim?`0 0 22px ${d.accent}44`:'none',transition:'all .2s'}}>
+            {claimed?`✓ +${d.pts} pts earned!`:`Claim ${d.pts} Points`}
           </button>
         </div>
       </div>
@@ -762,14 +762,16 @@ function PromoteTab({ user, campaigns, onLaunch }) {
   const [type,setType]=useState('watch');
   const [dur,setDur]=useState(30);
   const [views,setViews]=useState(100);
-  const [launching,setLaunching]=useState(false);
   const d=TASK_DEFS[type], cost=views*d.costPerView;
-  const can=url.trim().length>0&&(type==='watch'||chan.trim().length>0)&&user.points>=cost&&!launching;
+  const can=url.trim().length>0&&(type==='watch'||chan.trim().length>0)&&user.points>=cost;
 
-  async function launch(){
-    if(!can)return; setLaunching(true);
-    await onLaunch({ url:url.trim(), channelUrl:chan.trim()||url.trim(), title:`My Video #${Date.now().toString().slice(-4)}`, target:views, taskType:type, watchDuration:dur }, cost);
-    setUrl('');setChan('');setType('watch');setDur(30);setViews(100); setLaunching(false);
+  function launch(){
+    if(!can) return;
+    const campData={ url:url.trim(), channelUrl:chan.trim()||url.trim(), title:`My Video #${Date.now().toString().slice(-4)}`, target:views, taskType:type, watchDuration:dur };
+    // Reset form instantly
+    setUrl('');setChan('');setType('watch');setDur(30);setViews(100);
+    // Save in background
+    onLaunch(campData, cost);
   }
 
   const mine=campaigns.filter(c=>c.ownerId===user.id);
@@ -807,9 +809,8 @@ function PromoteTab({ user, campaigns, onLaunch }) {
           <div><div style={{fontSize:11,color:'#4b5563'}}>Total cost</div><div style={{fontSize:11,color:'#374151'}}>{views} × {d.costPerView} pts</div></div>
           <span style={{fontWeight:800,fontSize:20,color:cost>user.points?'#ef4444':d.accent,display:'flex',alignItems:'center',gap:6}}><Coins s={15} c="#f59e0b"/>{cost.toLocaleString()} pts</span>
         </div>
-        <button onClick={launch} disabled={!can} style={{width:'100%',padding:'13px',borderRadius:11,border:'none',fontFamily:'inherit',fontWeight:700,fontSize:15,cursor:can?'pointer':'not-allowed',background:can?`linear-gradient(135deg,${d.accent},${d.accent}99)`:'#1f2937',color:can?'#fff':'#4b5563',boxShadow:can?`0 0 24px ${d.accent}44`:'none',transition:'all .2s',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
-          {launching&&<div className="spinner" style={{width:15,height:15}}/>}
-          {launching?'Saving to Supabase…':!url.trim()?'Paste a URL to continue':(type!=='watch'&&!chan.trim())?'Add your channel URL':user.points<cost?'Not enough points':`🚀 Launch — ${cost.toLocaleString()} pts`}
+        <button onClick={launch} disabled={!can} style={{width:'100%',padding:'13px',borderRadius:11,border:'none',fontFamily:'inherit',fontWeight:700,fontSize:15,cursor:can?'pointer':'not-allowed',background:can?`linear-gradient(135deg,${d.accent},${d.accent}99)`:'#1f2937',color:can?'#fff':'#4b5563',boxShadow:can?`0 0 24px ${d.accent}44`:'none',transition:'all .2s'}}>
+          {!url.trim()?'Paste a URL to continue':(type!=='watch'&&!chan.trim())?'Add your channel URL':user.points<cost?'Not enough points':`🚀 Launch — ${cost.toLocaleString()} pts`}
         </button>
       </div>
       {mine.length>0&&(
@@ -952,27 +953,38 @@ function App() {
 
   function setActiveTask(t){ setTask(t); if(t) setTab('earn'); }
 
-  // Earn: save to Supabase
-  async function handleClaim(task, pts) {
+  // Earn: optimistic UI update + parallel background saves
+  function handleClaim(task, pts) {
     if(!user) return;
-    await supa.from('earn_history').insert({ user_id:user.id, campaign_id:task.id, campaign_title:task.title, task_type:task.taskType, pts });
+    // Update UI immediately — no waiting
     const newPts=user.points+pts, newTasks=(user.tasks_completed||0)+1, newEarned=(user.total_earned||0)+pts;
-    await supa.from('profiles').update({ points:newPts, tasks_completed:newTasks, total_earned:newEarned }).eq('id',user.id);
     setUser(u=>({...u, points:newPts, tasks_completed:newTasks, total_earned:newEarned}));
+    // Save both records in parallel in the background
+    Promise.all([
+      supa.from('earn_history').insert({ user_id:user.id, campaign_id:task.id, campaign_title:task.title, task_type:task.taskType, pts }),
+      supa.from('profiles').update({ points:newPts, tasks_completed:newTasks, total_earned:newEarned }).eq('id',user.id),
+    ]).catch(err => console.error('Claim save error:', err));
   }
 
-  // Promote: save campaign to Supabase
-  async function handleLaunch(campData, cost) {
+  // Promote: optimistic update + background save
+  function handleLaunch(campData, cost) {
     if(!user) return;
-    const { data } = await supa.from('campaigns').insert({
+    // Deduct points instantly
+    const newPts=user.points-cost;
+    setUser(u=>({...u, points:newPts}));
+    // Add a temp campaign card instantly
+    const tempId=`tmp_${Date.now()}`;
+    const tempCamp={ id:tempId, ownerId:user.id, url:campData.url, channelUrl:campData.channelUrl, title:campData.title, target:campData.target, delivered:0, taskType:campData.taskType, watchDuration:campData.watchDuration, createdAt:Date.now() };
+    setCamps(prev=>[tempCamp,...prev]);
+    // Save to DB in background; replace temp card with real ID when done
+    supa.from('campaigns').insert({
       owner_id:user.id, url:campData.url, channel_url:campData.channelUrl,
       title:campData.title, target:campData.target, delivered:0,
       task_type:campData.taskType, watch_duration:campData.watchDuration
-    }).select().single();
-    const newPts=user.points-cost;
-    await supa.from('profiles').update({ points:newPts }).eq('id',user.id);
-    setUser(u=>({...u, points:newPts}));
-    if(data) setCamps(prev=>[mapCamp(data),...prev]);
+    }).select().single().then(({data})=>{
+      if(data) setCamps(prev=>prev.map(c=>c.id===tempId?mapCamp(data):c));
+    }).catch(err=>console.error('Campaign save error:',err));
+    supa.from('profiles').update({ points:newPts }).eq('id',user.id).catch(err=>console.error('Points save error:',err));
   }
 
   if(initLoading) return <LoadingScreen/>;
