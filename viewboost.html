@@ -27,6 +27,8 @@
   </style>
   <!-- Supabase JS -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <!-- Google Identity Services (for YouTube comment OAuth) -->
+  <script src="https://accounts.google.com/gsi/client" async></script>
   <!-- React 18 -->
   <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.development.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"></script>
@@ -102,6 +104,63 @@ async function authGetSession() {
 async function authSignOut() {
   localStorage.removeItem(`sb-rqinoynbezufokewlwny-auth-token`);
   await supa.auth.signOut().catch(()=>{});
+}
+
+// ── YouTube Comment API ───────────────────────────────────────────────────────
+// Requires a Google Cloud OAuth 2.0 Client ID with YouTube Data API v3 enabled.
+// Setup: console.cloud.google.com → APIs & Services → Credentials → OAuth 2.0
+// Add your Vercel domain + localhost:3333 as Authorised JavaScript Origins.
+const GOOGLE_YT_CLIENT_ID = '218557888562-7e65v2vcn1dn3h7qk0nlt9u3q8j5kf9r.apps.googleusercontent.com';
+
+let _ytTokenClient = null;
+let _ytToken       = null;
+
+function initYTAuth() {
+  if (!GOOGLE_YT_CLIENT_ID || !window.google?.accounts?.oauth2) return;
+  _ytTokenClient = window.google.accounts.oauth2.initTokenClient({
+    client_id: GOOGLE_YT_CLIENT_ID,
+    scope: 'https://www.googleapis.com/auth/youtube.force-ssl',
+    callback: () => {},
+  });
+}
+
+function getYTToken() {
+  return new Promise((resolve, reject) => {
+    if (!GOOGLE_YT_CLIENT_ID) { reject(new Error('NO_CLIENT_ID')); return; }
+    // Wait for GIS to load (loaded async)
+    if (!window.google?.accounts?.oauth2) { reject(new Error('GIS_NOT_LOADED')); return; }
+    if (!_ytTokenClient) initYTAuth();
+    if (!_ytTokenClient) { reject(new Error('TOKEN_CLIENT_FAILED')); return; }
+    _ytTokenClient.callback = (resp) => {
+      if (resp.error) { reject(new Error(resp.error_description || resp.error)); return; }
+      _ytToken = resp.access_token;
+      resolve(resp.access_token);
+    };
+    // If we have a valid token already, reuse it
+    if (_ytToken) { resolve(_ytToken); return; }
+    _ytTokenClient.requestAccessToken({ prompt: '' });
+  });
+}
+
+async function postCommentToYouTube(videoId, commentText) {
+  const token = await getYTToken();
+  const res = await fetch('https://www.googleapis.com/youtube/v3/commentThreads?part=snippet', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      snippet: {
+        videoId,
+        topLevelComment: { snippet: { textOriginal: commentText } },
+      },
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    // Token expired — clear and throw so caller can retry once
+    if (data.error?.status === 'UNAUTHENTICATED' || res.status === 401) _ytToken = null;
+    throw new Error(data.error?.message || 'Failed to post comment to YouTube');
+  }
+  return data;
 }
 
 // ── DB helpers ────────────────────────────────────────────────────────────────
@@ -774,16 +833,21 @@ function DiscoverTab({ user, campaigns, setActiveTab, setActiveTask, onCheckout 
 
 // ── Earn Tab ──────────────────────────────────────────────────────────────────
 function EarnTab({ user, campaigns, onClaim, activeTask, setActiveTask }) {
-  const [timeLeft,setTimeLeft]=useState(0);
-  const [timerDone,setTimerDone]=useState(false);
-  const [subStep,setSubStep]=useState('idle');
-  const [comment,setComment]=useState('');
-  const [claimed,setClaimed]=useState(false);
-  const intRef=useRef(null);
+  const [timeLeft,  setTimeLeft]  = useState(0);
+  const [timerDone, setTimerDone] = useState(false);
+  const [subStep,   setSubStep]   = useState('idle');
+  const [comment,   setComment]   = useState('');
+  const [claimed,   setClaimed]   = useState(false);
+  const [ytStatus,  setYtStatus]  = useState('idle'); // idle | posting | posted | failed
+  const [ytError,   setYtError]   = useState('');
+  const intRef = useRef(null);
 
   useEffect(()=>{
     if(!activeTask)return;
-    setTimeLeft(activeTask.watchDuration);setTimerDone(false);setSubStep('idle');setComment('');setClaimed(false);
+    setTimeLeft(activeTask.watchDuration);
+    setTimerDone(false);setSubStep('idle');
+    setComment('');setClaimed(false);
+    setYtStatus('idle');setYtError('');
   },[activeTask?.id]);
 
   useEffect(()=>{
@@ -795,12 +859,30 @@ function EarnTab({ user, campaigns, onClaim, activeTask, setActiveTask }) {
 
   useEffect(()=>{if(timeLeft===0&&activeTask&&!timerDone)setTimerDone(true);},[timeLeft]);
 
-  function handleClaim(){
+  async function handleClaim(){
     if(!canClaim) return;
-    const d=TASK_DEFS[activeTask.taskType];
-    // Instant UI response — no waiting for DB
+    const d = TASK_DEFS[activeTask.taskType];
+
+    // For comment tasks — auto-post to YouTube first
+    if (activeTask.taskType === 'comment') {
+      const vid = extractVideoId(activeTask.url);
+      if (vid && GOOGLE_YT_CLIENT_ID) {
+        setYtStatus('posting');
+        try {
+          await postCommentToYouTube(vid, comment.trim());
+          setYtStatus('posted');
+        } catch(e) {
+          // If user cancelled auth or API failed, still allow claim (honour system)
+          const msg = e.message === 'NO_CLIENT_ID' || e.message === 'GIS_NOT_LOADED'
+            ? null // silently skip — API not configured
+            : e.message;
+          setYtStatus('failed');
+          if (msg) { setYtError(msg); }
+        }
+      }
+    }
+
     setClaimed(true);
-    // Fire-and-forget save in background
     onClaim(activeTask, d.pts);
   }
 
@@ -943,13 +1025,58 @@ function EarnTab({ user, campaigns, onClaim, activeTask, setActiveTask }) {
           )}
           {activeTask.taskType==='comment'&&(
             <div style={{display:'flex',flexDirection:'column',gap:8}}>
-              <div style={{fontSize:13,color:timerDone?'#fff':'#4b5563',display:'flex',alignItems:'center',gap:6}}><MsgSq s={13} c={timerDone?'#f59e0b':'#4b5563'}/>{timerDone?'Write your comment:':` Comment unlocks in ${timeLeft}s…`}</div>
-              <textarea disabled={!timerDone} value={comment} onChange={e=>setComment(e.target.value)} placeholder={timerDone?'Write a genuine comment…':'Waiting for watch timer…'} rows={3}
-                style={{padding:'10px 12px',borderRadius:8,border:`1px solid ${timerDone&&comment.trim()?'rgba(245,158,11,.5)':'rgba(255,255,255,.1)'}`,background:timerDone?'#0f0f1a':'#0a0a14',color:timerDone?'#fff':'#374151',fontSize:13,outline:'none',width:'100%'}}/>
+              {/* Auto-post badge */}
+              {timerDone && GOOGLE_YT_CLIENT_ID && (
+                <div style={{display:'flex',alignItems:'center',gap:6,fontSize:11,color:'#ff4444',background:'rgba(255,0,0,.08)',border:'1px solid rgba(255,0,0,.2)',borderRadius:7,padding:'5px 10px'}}>
+                  <Youtube s={12} c="#ff4444"/> Your comment will be posted to YouTube automatically
+                </div>
+              )}
+              <div style={{fontSize:13,color:timerDone?'#fff':'#4b5563',display:'flex',alignItems:'center',gap:6}}>
+                <MsgSq s={13} c={timerDone?'#f59e0b':'#4b5563'}/>
+                {timerDone?'Write your comment below:':` Comment unlocks in ${timeLeft}s…`}
+              </div>
+              <textarea
+                disabled={!timerDone || ytStatus==='posting' || claimed}
+                value={comment} onChange={e=>setComment(e.target.value)}
+                placeholder={timerDone?'Write a genuine comment about this video…':'Waiting for watch timer…'}
+                rows={3}
+                style={{padding:'10px 12px',borderRadius:8,border:`1px solid ${timerDone&&comment.trim()?'rgba(245,158,11,.5)':'rgba(255,255,255,.1)'}`,background:timerDone?'#0f0f1a':'#0a0a14',color:timerDone?'#fff':'#374151',fontSize:13,outline:'none',width:'100%',opacity:(ytStatus==='posting'||claimed)?.6:1}}/>
+
+              {/* YouTube posting status */}
+              {ytStatus==='posting' && (
+                <div style={{display:'flex',alignItems:'center',gap:8,fontSize:12,color:'#ff4444',padding:'8px 12px',background:'rgba(255,0,0,.08)',borderRadius:8,border:'1px solid rgba(255,0,0,.2)'}}>
+                  <div className="spinner" style={{width:13,height:13,borderTopColor:'#ff4444'}}/> Posting comment to YouTube…
+                </div>
+              )}
+              {ytStatus==='posted' && (
+                <div style={{display:'flex',alignItems:'center',gap:7,fontSize:12,color:'#4ade80',padding:'8px 12px',background:'rgba(22,163,74,.1)',borderRadius:8,border:'1px solid rgba(74,222,128,.2)'}}>
+                  <Youtube s={13} c="#4ade80"/> ✓ Comment posted to YouTube successfully!
+                </div>
+              )}
+              {ytStatus==='failed' && ytError && (
+                <div style={{fontSize:11,color:'#f87171',padding:'7px 10px',background:'rgba(248,113,113,.08)',borderRadius:7,border:'1px solid rgba(248,113,113,.2)'}}>
+                  ⚠ YouTube post failed: {ytError}. Points still awarded.
+                </div>
+              )}
             </div>
           )}
-          <button onClick={handleClaim} disabled={!canClaim} style={{padding:'12px',borderRadius:11,border:'none',fontFamily:'inherit',fontWeight:700,fontSize:15,marginTop:4,cursor:canClaim?'pointer':'not-allowed',background:claimed?'rgba(22,163,74,.2)':canClaim?`linear-gradient(135deg,${d.accent},${d.accent}99)`:'#1f2937',color:claimed?'#4ade80':canClaim?'#fff':'#4b5563',boxShadow:canClaim?`0 0 22px ${d.accent}44`:'none',transition:'all .2s'}}>
-            {claimed?`✓ +${d.pts} pts earned!`:`Claim ${d.pts} Points`}
+
+          {/* Claim button */}
+          <button onClick={handleClaim} disabled={!canClaim || ytStatus==='posting'} style={{
+            padding:'12px',borderRadius:11,border:'none',fontFamily:'inherit',
+            fontWeight:700,fontSize:15,marginTop:4,
+            cursor:(canClaim && ytStatus!=='posting')?'pointer':'not-allowed',
+            background:claimed?'rgba(22,163,74,.2)':canClaim?`linear-gradient(135deg,${d.accent},${d.accent}99)`:'#1f2937',
+            color:claimed?'#4ade80':canClaim?'#fff':'#4b5563',
+            boxShadow:canClaim?`0 0 22px ${d.accent}44`:'none',
+            transition:'all .2s',
+            display:'flex',alignItems:'center',justifyContent:'center',gap:8,
+          }}>
+            {ytStatus==='posting' && <div className="spinner" style={{width:14,height:14}}/>}
+            {claimed
+              ? (ytStatus==='posted' ? `✓ Posted on YouTube · +${d.pts} pts!` : `✓ +${d.pts} pts earned!`)
+              : ytStatus==='posting' ? 'Posting to YouTube…'
+              : `Claim ${d.pts} Points`}
           </button>
         </div>
       </div>
@@ -1236,6 +1363,11 @@ function App() {
 
   useEffect(()=>{
     let mounted=true;
+    // Init Google YouTube auth when GIS script has loaded
+    const gisInterval = setInterval(()=>{
+      if(window.google?.accounts?.oauth2){ initYTAuth(); clearInterval(gisInterval); }
+    }, 500);
+    setTimeout(()=>clearInterval(gisInterval), 10000); // stop polling after 10s
 
     async function init() {
       try {
