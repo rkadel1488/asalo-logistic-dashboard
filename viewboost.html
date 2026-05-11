@@ -924,17 +924,31 @@ function App() {
   useEffect(()=>{
     let mounted=true;
 
-    async function init() {
-      // Load campaigns for everyone (public data)
-      fetchCampaigns().then(data=>{ if(mounted) setCamps(data); });
+    // Hard timeout — never spin for more than 6 seconds
+    const timeout = setTimeout(()=>{ if(mounted) setInitLoading(false); }, 6000);
 
-      // Check existing session
-      const { data:{ session } } = await supa.auth.getSession();
-      if(session && mounted){
-        const profile = await fetchProfile(session.user.id);
-        if(mounted) setUser({ id:session.user.id, email:session.user.email, ...(profile||{name:'',points:2000,tasks_completed:0,total_earned:0,created_at:new Date().toISOString()}) });
+    async function init() {
+      try {
+        // Load campaigns in background (non-blocking)
+        fetchCampaigns().then(data=>{ if(mounted) setCamps(data); }).catch(()=>{});
+
+        // Check existing session with a 5s race timeout
+        const sessionResult = await Promise.race([
+          supa.auth.getSession(),
+          new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),5000)),
+        ]);
+        const session = sessionResult?.data?.session;
+        if(session && mounted){
+          const profile = await fetchProfile(session.user.id);
+          if(mounted) setUser({ id:session.user.id, email:session.user.email, ...(profile||{name:'',points:2000,tasks_completed:0,total_earned:0,created_at:new Date().toISOString()}) });
+        }
+      } catch(e) {
+        console.warn('Supabase init:', e.message);
+        // Still show the app — user can log in manually
+      } finally {
+        clearTimeout(timeout);
+        if(mounted) setInitLoading(false);
       }
-      if(mounted) setInitLoading(false);
     }
     init();
 
