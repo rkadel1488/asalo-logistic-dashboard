@@ -1,43 +1,1030 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>ASALO Logistic — Dashboard</title>
-  <link rel="stylesheet" href="styles.css" />
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ViewBoost</title>
   <style>
-    html, body, #root { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#0f0f1a;font-family:system-ui,-apple-system,BlinkMacSystemFont,sans-serif}
+    input[type=range]{accent-color:#a855f7;cursor:pointer;width:100%}
+    textarea{resize:vertical;font-family:inherit}
+    ::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:#0f0f1a}::-webkit-scrollbar-thumb{background:#2d2d4e;border-radius:3px}
+    @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+    @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+    @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(168,85,247,.4)}50%{box-shadow:0 0 0 8px rgba(168,85,247,0)}}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    @keyframes popIn{0%{opacity:0;transform:scale(.85)}60%{transform:scale(1.05)}100%{opacity:1;transform:scale(1)}}
+    @keyframes confetti{0%{transform:translateY(-10px) rotate(0deg);opacity:1}100%{transform:translateY(80px) rotate(720deg);opacity:0}}
+    .fade-up{animation:fadeUp .25s ease}.fade-in{animation:fadeIn .3s ease}
+    .pop-in{animation:popIn .4s cubic-bezier(.34,1.56,.64,1)}
+    .pulse{animation:pulse 1.5s infinite}
+    .spinner{width:22px;height:22px;border:3px solid rgba(255,255,255,.2);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;display:inline-block}
+    .checkout-input{width:100%;padding:13px 16px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:#0d0d1f;color:#fff;font-size:14px;outline:none;font-family:inherit;transition:border-color .2s,box-shadow .2s}
+    .checkout-input:focus{border-color:rgba(168,85,247,.6);box-shadow:0 0 0 3px rgba(168,85,247,.12)}
+    .checkout-input::placeholder{color:#374151}
+    .checkout-input:disabled{opacity:.5;cursor:not-allowed}
   </style>
-
-  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
-  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
-  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
-  <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <style>
-    /* keep Leaflet controls visible over dark theme */
-    .leaflet-container { background: #1a1a2e; }
-    .leaflet-control-zoom a { background: var(--bg-1) !important; color: var(--fg-0) !important; border-color: var(--line) !important; }
-    .leaflet-control-attribution { background: rgba(0,0,0,0.5) !important; color: var(--fg-3) !important; font-size: 9px !important; }
-    .leaflet-control-attribution a { color: var(--fg-2) !important; }
-    .leaflet-tile { filter: brightness(0.45) saturate(0.6) hue-rotate(190deg); }
-  </style>
+  <!-- Supabase JS -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <!-- React 18 -->
+  <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.23.9/babel.min.js"></script>
 </head>
 <body>
-  <div id="root"></div>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
 
-  <!-- Order matters: data → primitives → tweaks-panel → shell → screens → orders → app -->
-  <script type="text/babel" src="data.jsx"></script>
-  <script type="text/babel" src="primitives.jsx"></script>
-  <script type="text/babel" src="tweaks-panel.jsx"></script>
-  <script type="text/babel" src="shell.jsx"></script>
-  <script type="text/babel" src="orders.jsx"></script>
-  <script type="text/babel" src="screens.jsx"></script>
-  <script type="text/babel" src="app.jsx"></script>
+// ── Supabase Client ───────────────────────────────────────────────────────────
+const { createClient } = window.supabase;
+const supa = createClient(
+  'https://rqinoynbezufokewlwny.supabase.co',
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJxaW5veW5iZXp1Zm9rZXdsd255Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgyMTA0OTksImV4cCI6MjA5Mzc4NjQ5OX0.QFz8ZWa5OB0KIWLDFtZYv8t3aJLRDFPlXkOcEIdidLQ'
+);
 
-  <script type="text/babel">
-    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
-  </script>
+// ── DB helpers ────────────────────────────────────────────────────────────────
+// Map Supabase campaign row → app shape
+function mapCamp(c) {
+  return {
+    id: c.id, ownerId: c.owner_id, url: c.url, channelUrl: c.channel_url||'',
+    title: c.title, target: c.target, delivered: c.delivered,
+    taskType: c.task_type, watchDuration: c.watch_duration,
+    createdAt: new Date(c.created_at).getTime(),
+  };
+}
+async function fetchCampaigns() {
+  const { data } = await supa.from('campaigns').select('*').order('created_at', { ascending: false });
+  return (data||[]).map(mapCamp);
+}
+async function fetchProfile(userId) {
+  const { data } = await supa.from('profiles').select('*').eq('id', userId).single();
+  return data;
+}
+async function fetchLeaderboard() {
+  const { data } = await supa.from('profiles')
+    .select('id, name, points, tasks_completed, total_earned, created_at')
+    .order('points', { ascending: false });
+  return data || [];
+}
+async function fetchEarnHistory(userId) {
+  const { data } = await supa.from('earn_history')
+    .select('*').eq('user_id', userId).order('earned_at', { ascending: false }).limit(100);
+  return data || [];
+}
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+const TASK_DEFS = {
+  watch:     { label:'Watch',             emoji:'👁️', pts:50,  costPerView:5,  accent:'#22d3ee', desc:'Watch the video for the required duration' },
+  subscribe: { label:'Watch + Subscribe', emoji:'🔔', pts:75,  costPerView:8,  accent:'#a855f7', desc:'Watch & subscribe to the creator\'s channel' },
+  comment:   { label:'Watch + Comment',   emoji:'💬', pts:100, costPerView:12, accent:'#f59e0b', desc:'Watch & leave a genuine comment on the video' },
+};
+const PACKAGES = [
+  { id:'starter', name:'Starter',  pts:2000,  price:0.99, badge:null,          accent:'#64748b', features:['2,000 Points','Run 1 campaign','Basic support','Best for beginners'] },
+  { id:'growth',  name:'Growth',   pts:5000,  price:1.99, badge:'Most Popular', accent:'#a855f7', features:['5,000 Points','Run 3 campaigns','Priority support','Save 20%'] },
+  { id:'pro',     name:'Pro',      pts:15000, price:5.99, badge:'Best Value',   accent:'#22d3ee', features:['15,000 Points','Unlimited campaigns','Priority support','Save 40%','Analytics'] },
+  { id:'creator', name:'Creator',  pts:30000, price:9.99, badge:null,          accent:'#f59e0b', features:['30,000 Points','Unlimited campaigns','Dedicated support','Save 50%','Analytics','API Access'] },
+];
+const RING_R=54, RING_CIRC=2*Math.PI*RING_R;
+function extractVideoId(url=''){const m=url.match(/(?:[?&]v=|youtu\.be\/|embed\/)([A-Za-z0-9_-]{11})/);return m?m[1]:null;}
+function fmtDate(ts){return new Date(ts).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}
+function fmtTime(ts){return new Date(ts).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});}
+function initials(n=''){return n.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2)||'?';}
+function timeAgo(ts){const d=Date.now()-new Date(ts).getTime(),m=60e3,h=3600e3,day=864e5;if(d<m)return'just now';if(d<h)return`${Math.floor(d/m)}m ago`;if(d<day)return`${Math.floor(d/h)}h ago`;return`${Math.floor(d/day)}d ago`;}
+
+// ── Icons ─────────────────────────────────────────────────────────────────────
+const Ic=({s=16,c='currentColor',f='none',sw=2,style,ch})=>(
+  <svg width={s} height={s} viewBox="0 0 24 24" fill={f} stroke={c} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" style={{display:'inline-block',verticalAlign:'middle',flexShrink:0,...style}}>{ch}</svg>
+);
+const Play      = p=><Ic {...p} ch={<polygon points="5 3 19 12 5 21 5 3" fill={p.fill||'none'}/>}/>;
+const Coins     = p=><Ic {...p} ch={<><circle cx="8" cy="8" r="6"/><path d="M18.09 10.37A6 6 0 1 1 10.34 18"/><path d="M7 6h1v4"/><path d="m16.71 13.88.7.71-2.82 2.82"/></>}/>;
+const Rocket    = p=><Ic {...p} ch={<><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></>}/>;
+const BarChart  = p=><Ic {...p} ch={<><line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/></>}/>;
+const ExtLink   = p=><Ic {...p} ch={<><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" x2="21" y1="14" y2="3"/></>}/>;
+const ArrowL    = p=><Ic {...p} ch={<><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></>}/>;
+const Check     = p=><Ic {...p} ch={<><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></>}/>;
+const MsgSq     = p=><Ic {...p} ch={<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>}/>;
+const Bell      = p=><Ic {...p} ch={<><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></>}/>;
+const Eye       = p=><Ic {...p} ch={<><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>}/>;
+const Clock     = p=><Ic {...p} ch={<><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>}/>;
+const LogOut    = p=><Ic {...p} ch={<><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></>}/>;
+const Trophy    = p=><Ic {...p} ch={<><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2z"/></>}/>;
+const Youtube   = p=><Ic {...p} ch={<><path d="M22.54 6.42a2.78 2.78 0 0 0-1.95-1.96C18.88 4 12 4 12 4s-6.88 0-8.59.46a2.78 2.78 0 0 0-1.95 1.96A29 29 0 0 0 1 12a29 29 0 0 0 .46 5.58A2.78 2.78 0 0 0 3.41 19.6C5.12 20 12 20 12 20s6.88 0 8.59-.46a2.78 2.78 0 0 0 1.95-1.95A29 29 0 0 0 23 12a29 29 0 0 0-.46-5.58z"/><polygon points="9.75 15.02 15.5 12 9.75 8.98 9.75 15.02" fill="white" stroke="none"/></>}/>;
+const Users     = p=><Ic {...p} ch={<><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></>}/>;
+const ShoppingB = p=><Ic {...p} ch={<><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></>}/>;
+const Zap       = p=><Ic {...p} ch={<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>}/>;
+const Globe     = p=><Ic {...p} ch={<><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></>}/>;
+
+// ── Loading Screen ────────────────────────────────────────────────────────────
+function LoadingScreen() {
+  return (
+    <div style={{minHeight:'100vh',background:'#0f0f1a',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:20}}>
+      <div style={{width:48,height:48,borderRadius:12,background:'linear-gradient(135deg,#a855f7,#22d3ee)',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 0 32px rgba(168,85,247,.4)'}}>
+        <Play s={22} c="#fff" fill="#fff"/>
+      </div>
+      <div style={{width:40,height:40,border:'3px solid rgba(168,85,247,.2)',borderTopColor:'#a855f7',borderRadius:'50%',animation:'spin .8s linear infinite'}}/>
+      <div style={{fontSize:13,color:'#4b5563'}}>Connecting to Supabase…</div>
+    </div>
+  );
+}
+
+// ── Login Screen ──────────────────────────────────────────────────────────────
+function LoginScreen({ onLogin }) {
+  const [mode,setMode]=useState('login');
+  const [name,setName]=useState('');
+  const [email,setEmail]=useState('');
+  const [pass,setPass]=useState('');
+  const [err,setErr]=useState('');
+  const [loading,setLoading]=useState(false);
+
+  async function submit(e) {
+    e.preventDefault(); setErr(''); setLoading(true);
+    try {
+      if (mode === 'login') {
+        const { data, error } = await supa.auth.signInWithPassword({ email, password: pass });
+        if (error) throw error;
+        const profile = await fetchProfile(data.user.id);
+        onLogin({ id: data.user.id, email: data.user.email, ...profile });
+      } else {
+        if (!name.trim()) { setErr('Please enter your name.'); setLoading(false); return; }
+        const { data, error } = await supa.auth.signUp({
+          email, password: pass, options: { data: { name: name.trim() } }
+        });
+        if (error) throw error;
+        // Profile auto-created by DB trigger — fetch it
+        await new Promise(r => setTimeout(r, 800)); // let trigger run
+        const profile = await fetchProfile(data.user.id);
+        onLogin({ id: data.user.id, email: data.user.email, ...(profile || { name: name.trim(), points: 2000, tasks_completed: 0, total_earned: 0, created_at: new Date().toISOString() }) });
+      }
+    } catch (e) {
+      setErr(e.message);
+      setLoading(false);
+    }
+  }
+
+  const inp=(val,set,type,ph)=>(
+    <input type={type} value={val} onChange={e=>set(e.target.value)} placeholder={ph} required disabled={loading}
+      style={{width:'100%',padding:'12px 16px',borderRadius:10,border:'1px solid rgba(255,255,255,.1)',background:'#0d0d1f',color:'#fff',fontSize:14,outline:'none',fontFamily:'inherit',marginBottom:12,opacity:loading?.6:1}}/>
+  );
+
+  return (
+    <div className="fade-up" style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'#0f0f1a',padding:24}}>
+      <div style={{width:'100%',maxWidth:420}}>
+        <div style={{textAlign:'center',marginBottom:36}}>
+          <div style={{width:58,height:58,borderRadius:14,background:'linear-gradient(135deg,#a855f7,#22d3ee)',display:'inline-flex',alignItems:'center',justifyContent:'center',marginBottom:14,boxShadow:'0 0 32px rgba(168,85,247,.4)'}}>
+            <Play s={26} c="#fff" fill="#fff"/>
+          </div>
+          <div style={{fontSize:28,fontWeight:800,color:'#fff',letterSpacing:'-0.5px'}}>View<span style={{color:'#a855f7'}}>Boost</span></div>
+          <div style={{fontSize:14,color:'#64748b',marginTop:6}}>Earn points. Grow your channel.</div>
+          {mode==='register'&&<div style={{marginTop:12,padding:'8px 16px',background:'linear-gradient(135deg,rgba(245,158,11,.15),rgba(168,85,247,.15))',border:'1px solid rgba(245,158,11,.35)',borderRadius:10,display:'inline-flex',alignItems:'center',gap:7,fontSize:13,color:'#f59e0b',fontWeight:700}}>🎁 Sign up &amp; get <span style={{color:'#fff'}}>2,000 points FREE!</span></div>}
+        </div>
+        <div style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,.07)',borderRadius:18,padding:28}}>
+          <h2 style={{fontSize:18,fontWeight:700,color:'#fff',marginBottom:22}}>{mode==='login'?'Sign in to your account':'Create your account'}</h2>
+          <form onSubmit={submit}>
+            {mode==='register'&&inp(name,setName,'text','Full name')}
+            {inp(email,setEmail,'email','Email address')}
+            {inp(pass,setPass,'password','Password')}
+            {err&&<div style={{color:'#f87171',fontSize:13,marginBottom:12,padding:'8px 12px',background:'rgba(248,113,113,.1)',borderRadius:8}}>{err}</div>}
+            <button type="submit" disabled={loading} style={{width:'100%',padding:'13px',borderRadius:11,border:'none',background:'linear-gradient(135deg,#a855f7,#7c3aed)',color:'#fff',fontWeight:700,fontSize:15,cursor:loading?'wait':'pointer',fontFamily:'inherit',boxShadow:'0 0 24px rgba(168,85,247,.35)',marginBottom:12,opacity:loading?.7:1,display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+              {loading&&<div className="spinner" style={{width:16,height:16}}/>}
+              {loading?'Please wait…':mode==='login'?'Sign In':'Create Account'}
+            </button>
+          </form>
+          <div style={{textAlign:'center',fontSize:13,color:'#64748b'}}>
+            {mode==='login'?"Don't have an account? ":"Already have an account? "}
+            <span onClick={()=>{setMode(mode==='login'?'register':'login');setErr('');}} style={{color:'#a855f7',cursor:'pointer',fontWeight:600}}>
+              {mode==='login'?'Sign Up':'Sign In'}
+            </span>
+          </div>
+        </div>
+        <div style={{textAlign:'center',marginTop:14,fontSize:11,color:'#374151'}}>Powered by Supabase Auth · data encrypted at rest</div>
+      </div>
+    </div>
+  );
+}
+
+// ── Header ────────────────────────────────────────────────────────────────────
+function Header({ user, onLogout }) {
+  const [open,setOpen]=useState(false);
+  return (
+    <header style={{background:'#13132a',borderBottom:'1px solid rgba(255,255,255,.08)',padding:'0 24px',position:'sticky',top:0,zIndex:100}}>
+      <div style={{maxWidth:960,margin:'0 auto',height:62,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+        <div style={{display:'flex',alignItems:'center',gap:10}}>
+          <div style={{width:30,height:30,borderRadius:7,background:'linear-gradient(135deg,#a855f7,#22d3ee)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+            <Play s={14} c="#fff" fill="#fff"/>
+          </div>
+          <span style={{fontWeight:800,fontSize:19,letterSpacing:'-0.5px',color:'#fff'}}>View<span style={{color:'#a855f7'}}>Boost</span></span>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:12}}>
+          <div style={{display:'flex',alignItems:'center',gap:6,background:'linear-gradient(135deg,#1e1140,#1a1a2e)',border:'1px solid rgba(168,85,247,.25)',borderRadius:999,padding:'5px 14px',boxShadow:'0 0 14px rgba(168,85,247,.18)'}}>
+            <Coins s={14} c="#f59e0b"/><span style={{fontWeight:700,fontSize:14,color:'#fff'}}>{(user.points||0).toLocaleString()}</span><span style={{color:'#94a3b8',fontSize:11}}>pts</span>
+          </div>
+          <div style={{position:'relative'}}>
+            <button onClick={()=>setOpen(o=>!o)} style={{display:'flex',alignItems:'center',gap:8,background:'#1a1a2e',border:'1px solid rgba(255,255,255,.1)',borderRadius:999,padding:'5px 12px 5px 5px',cursor:'pointer'}}>
+              <div style={{width:28,height:28,borderRadius:999,background:'linear-gradient(135deg,#a855f7,#22d3ee)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:800,color:'#fff'}}>{initials(user.name)}</div>
+              <span style={{fontSize:13,fontWeight:600,color:'#fff',maxWidth:90,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{(user.name||'').split(' ')[0]}</span>
+            </button>
+            {open&&(
+              <div style={{position:'absolute',right:0,top:'calc(100% + 8px)',background:'#1a1a2e',border:'1px solid rgba(255,255,255,.08)',borderRadius:12,padding:8,minWidth:180,zIndex:200,boxShadow:'0 8px 32px rgba(0,0,0,.4)'}}>
+                <div style={{padding:'7px 12px',fontSize:11,color:'#64748b',borderBottom:'1px solid rgba(255,255,255,.06)',marginBottom:4}}>{user.email}</div>
+                <div style={{padding:'4px 12px 8px',fontSize:11,color:'#4b5563',display:'flex',alignItems:'center',gap:5}}>
+                  <span style={{width:6,height:6,borderRadius:'50%',background:'#4ade80',display:'inline-block'}}/> Saved to Supabase
+                </div>
+                <button onClick={()=>{setOpen(false);onLogout();}} style={{width:'100%',padding:'8px 12px',borderRadius:8,border:'none',background:'transparent',color:'#f87171',fontSize:13,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:8,fontWeight:600}}>
+                  <LogOut s={13} c="#f87171"/> Sign Out
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+// ── TabBar ────────────────────────────────────────────────────────────────────
+function TabBar({ activeTab, setActiveTab }) {
+  const tabs=[{id:'discover',label:'🌐 Discover'},{id:'earn',label:'⚡ Earn'},{id:'promote',label:'🚀 Promote'},{id:'dashboard',label:'📊 My Stats'}];
+  return (
+    <div style={{display:'flex',justifyContent:'center',padding:'18px 0 0'}}>
+      <div style={{display:'inline-flex',background:'#1a1a2e',border:'1px solid rgba(255,255,255,.06)',borderRadius:999,padding:4,gap:4}}>
+        {tabs.map(t=>{const a=activeTab===t.id;return<button key={t.id} onClick={()=>setActiveTab(t.id)} style={{padding:'9px 18px',borderRadius:999,border:'none',cursor:'pointer',fontWeight:600,fontSize:13,fontFamily:'inherit',transition:'all 200ms',background:a?'linear-gradient(135deg,#a855f7,#7c3aed)':'transparent',color:a?'#fff':'#94a3b8',boxShadow:a?'0 0 20px rgba(168,85,247,.31)':'none'}}>{t.label}</button>;})}
+      </div>
+    </div>
+  );
+}
+
+// ── Shared ────────────────────────────────────────────────────────────────────
+function TaskBadge({ taskType, sm }) {
+  const d=TASK_DEFS[taskType]||TASK_DEFS.watch;
+  return <span style={{display:'inline-flex',alignItems:'center',gap:4,background:`${d.accent}18`,color:d.accent,border:`1px solid ${d.accent}40`,borderRadius:999,padding:sm?'2px 8px':'4px 12px',fontSize:sm?11:12,fontWeight:700,whiteSpace:'nowrap'}}>{d.emoji} {d.label}</span>;
+}
+function TimerRing({ timeLeft, totalTime, done }) {
+  const p=totalTime>0?timeLeft/totalTime:0, off=RING_CIRC*(1-p), col=done?'#a855f7':'#22d3ee';
+  return (
+    <div style={{position:'relative',width:112,height:112}}>
+      <svg width="112" height="112" style={{transform:'rotate(-90deg)'}}>
+        <circle cx="56" cy="56" r={RING_R} fill="none" stroke="#1a1a2e" strokeWidth="7"/>
+        <circle cx="56" cy="56" r={RING_R} fill="none" stroke={col} strokeWidth="7" strokeLinecap="round" strokeDasharray={RING_CIRC} strokeDashoffset={off} style={{transition:'stroke-dashoffset 0.9s linear, stroke 0.3s'}}/>
+      </svg>
+      <div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center'}}>
+        <span style={{fontSize:26,fontWeight:800,color:col,lineHeight:1}}>{timeLeft}</span>
+        <span style={{fontSize:9,color:'#64748b',marginTop:3,textTransform:'uppercase',letterSpacing:'0.06em'}}>sec</span>
+      </div>
+    </div>
+  );
+}
+function CampaignCard({ campaign, compact, actionLabel, onAction }) {
+  const pct=Math.min(Math.round((campaign.delivered/campaign.target)*100),100);
+  const d=TASK_DEFS[campaign.taskType]||TASK_DEFS.watch;
+  return (
+    <div style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,.06)',borderRadius:12,padding:compact?'12px 15px':'16px 20px',display:'flex',flexDirection:'column',gap:8}}>
+      <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:10}}>
+        <div style={{minWidth:0}}>
+          <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:3,flexWrap:'wrap'}}>
+            <div style={{fontWeight:700,fontSize:compact?13:14,color:'#fff'}}>{campaign.title}</div>
+            <TaskBadge taskType={campaign.taskType} sm/>
+          </div>
+          {!compact&&<div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+            <a href={campaign.url} target="_blank" rel="noreferrer" style={{color:'#64748b',fontSize:11,textDecoration:'none',display:'flex',alignItems:'center',gap:3}}>
+              <ExtLink s={9} c="#64748b"/>{campaign.url.length>44?campaign.url.slice(0,44)+'…':campaign.url}
+            </a>
+            <span style={{color:'#4b5563',fontSize:11,display:'flex',alignItems:'center',gap:3}}><Clock s={9} c="#4b5563"/>{campaign.watchDuration}s</span>
+          </div>}
+        </div>
+        <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:6}}>
+          <span style={{background:pct>=100?'rgba(22,163,74,.13)':'rgba(168,85,247,.13)',color:pct>=100?'#4ade80':'#a855f7',border:`1px solid ${pct>=100?'rgba(74,222,128,.25)':'rgba(168,85,247,.25)'}`,borderRadius:999,padding:'2px 10px',fontSize:11,fontWeight:700,whiteSpace:'nowrap'}}>{pct}%</span>
+          {actionLabel&&<button onClick={onAction} style={{padding:'5px 12px',borderRadius:7,border:'none',background:`${d.accent}cc`,color:'#fff',fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap'}}>{actionLabel}</button>}
+        </div>
+      </div>
+      <div>
+        <div style={{height:5,background:'#0f0f1a',borderRadius:999,overflow:'hidden'}}>
+          <div style={{height:'100%',width:`${pct}%`,background:'linear-gradient(90deg,#a855f7,#22d3ee)',borderRadius:999,transition:'width .4s ease'}}/>
+        </div>
+        <div style={{display:'flex',justifyContent:'space-between',marginTop:5,fontSize:11,color:'#64748b'}}>
+          <span>{campaign.delivered} / {campaign.target} views</span>
+          <span style={{color:d.accent}}>{d.emoji} +{d.pts} pts</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Checkout Page ─────────────────────────────────────────────────────────────
+function CheckoutPage({ pkg, user, onUpdatePoints, onBack, onSuccess }) {
+  const [phase,setPhase]=useState('form');
+  const [name,setName]=useState(user.name||'');
+  const [email,setEmail]=useState(user.email||'');
+  const [card,setCard]=useState('');
+  const [expiry,setExpiry]=useState('');
+  const [cvv,setCvv]=useState('');
+  const [errors,setErrors]=useState({});
+  const [steps,setSteps]=useState([]);
+
+  function fmtCard(v){return v.replace(/\D/g,'').slice(0,16).replace(/(.{4})/g,'$1 ').trim();}
+  function fmtExpiry(v){const d=v.replace(/\D/g,'').slice(0,4);return d.length>=3?d.slice(0,2)+'/'+d.slice(2):d;}
+  function cardBrand(v){const n=v.replace(/\s/g,'');if(n.startsWith('4'))return'Visa';if(/^5[1-5]/.test(n))return'Mastercard';if(/^3[47]/.test(n))return'Amex';return'Card';}
+  function validate(){const e={};if(!name.trim())e.name='Full name is required';if(!email.includes('@'))e.email='Valid email required';if(card.replace(/\s/g,'').length<16)e.card='Enter a valid 16-digit card number';if(expiry.length<5)e.expiry='Enter expiry as MM/YY';if(cvv.length<3)e.cvv='Enter 3-digit CVV';return e;}
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    const errs=validate(); if(Object.keys(errs).length){setErrors(errs);return;}
+    setErrors({}); setPhase('processing');
+    const msgs=['Validating card details…','Contacting payment gateway…','Authorising transaction…','Securing your purchase…','Adding points to your account…'];
+    msgs.forEach((msg,i)=>setTimeout(()=>setSteps(p=>[...p,msg]),i*500));
+    setTimeout(async()=>{
+      const newPts=user.points+pkg.pts;
+      await supa.from('profiles').update({points:newPts}).eq('id',user.id);
+      onUpdatePoints(newPts);
+      setPhase('success');
+    },msgs.length*500+400);
+  }
+
+  const iStyle=(f)=>({width:'100%',padding:'13px 16px',borderRadius:10,border:`1px solid ${errors[f]?'#ef4444':'rgba(255,255,255,.12)'}`,background:'#0d0d1f',color:'#fff',fontSize:14,outline:'none',fontFamily:'inherit'});
+
+  if(phase==='success') return (
+    <div className="fade-in" style={{minHeight:'100vh',background:'#0f0f1a',display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
+      <div className="pop-in" style={{textAlign:'center',maxWidth:480}}>
+        <div style={{fontSize:72,marginBottom:8,lineHeight:1}}>🎉</div>
+        <div style={{display:'flex',justifyContent:'center',gap:6,marginBottom:24,flexWrap:'wrap',fontSize:22}}>
+          {['🎊','✨','💫','⭐','🌟'].map((e,i)=><span key={i} style={{animation:`confetti ${0.8+i*0.15}s ease forwards`,display:'inline-block'}}>{e}</span>)}
+        </div>
+        <h1 style={{fontSize:34,fontWeight:800,color:'#4ade80',marginBottom:8,letterSpacing:'-0.5px'}}>Purchase Complete!</h1>
+        <p style={{fontSize:16,color:'#94a3b8',marginBottom:24}}>Your <strong style={{color:'#fff'}}>{pkg.name} Pack</strong> has been activated successfully.</p>
+        <div style={{display:'inline-flex',alignItems:'center',gap:12,background:'linear-gradient(135deg,#1e1140,#0f1a1a)',border:'1px solid rgba(74,222,128,.3)',borderRadius:16,padding:'20px 32px',marginBottom:28,boxShadow:'0 0 40px rgba(74,222,128,.15)'}}>
+          <Coins s={32} c="#f59e0b"/>
+          <div style={{textAlign:'left'}}>
+            <div style={{fontSize:36,fontWeight:800,color:'#f59e0b',lineHeight:1}}>+{pkg.pts.toLocaleString()}</div>
+            <div style={{fontSize:13,color:'#64748b',marginTop:3}}>points added to your account</div>
+          </div>
+        </div>
+        <div style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,.07)',borderRadius:12,padding:'16px 20px',marginBottom:28,textAlign:'left'}}>
+          <div style={{fontSize:11,color:'#64748b',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:10}}>Order Summary</div>
+          <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}><span style={{fontSize:13,color:'#94a3b8'}}>Package</span><span style={{fontSize:13,color:'#fff',fontWeight:600}}>{pkg.name} Pack</span></div>
+          <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}><span style={{fontSize:13,color:'#94a3b8'}}>Points</span><span style={{fontSize:13,color:'#f59e0b',fontWeight:700}}>{pkg.pts.toLocaleString()} pts</span></div>
+          <div style={{borderTop:'1px solid rgba(255,255,255,.06)',marginTop:8,paddingTop:8,display:'flex',justifyContent:'space-between'}}><span style={{fontSize:14,color:'#fff',fontWeight:700}}>Total</span><span style={{fontSize:14,color:'#4ade80',fontWeight:800}}>${pkg.price}</span></div>
+        </div>
+        <div style={{display:'flex',gap:12,justifyContent:'center',flexWrap:'wrap'}}>
+          <button onClick={onSuccess} style={{padding:'14px 32px',borderRadius:12,border:'none',background:'linear-gradient(135deg,#a855f7,#7c3aed)',color:'#fff',fontWeight:700,fontSize:15,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 0 24px rgba(168,85,247,.4)'}}>🚀 Start Promoting</button>
+          <button onClick={onBack} style={{padding:'14px 24px',borderRadius:12,border:'1px solid rgba(255,255,255,.12)',background:'transparent',color:'#94a3b8',fontWeight:600,fontSize:14,cursor:'pointer',fontFamily:'inherit'}}>Back to Discover</button>
+        </div>
+      </div>
+    </div>
+  );
+
+  if(phase==='processing') return (
+    <div className="fade-in" style={{minHeight:'100vh',background:'#0f0f1a',display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
+      <div style={{textAlign:'center',maxWidth:380}}>
+        <div style={{width:72,height:72,border:'4px solid rgba(168,85,247,.2)',borderTopColor:'#a855f7',borderRadius:'50%',animation:'spin .8s linear infinite',margin:'0 auto 24px'}}/>
+        <h2 style={{fontSize:22,fontWeight:800,color:'#fff',marginBottom:8}}>Processing Payment</h2>
+        <p style={{fontSize:13,color:'#64748b',marginBottom:28}}>Please wait…</p>
+        <div style={{display:'flex',flexDirection:'column',gap:10,textAlign:'left'}}>
+          {steps.map((s,i)=><div key={i} className="fade-up" style={{display:'flex',alignItems:'center',gap:10,background:'#1a1a2e',borderRadius:9,padding:'10px 14px',border:'1px solid rgba(255,255,255,.06)'}}><Check s={14} c="#4ade80"/><span style={{fontSize:13,color:'#94a3b8'}}>{s}</span></div>)}
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="fade-in" style={{minHeight:'100vh',background:'#0f0f1a',color:'#fff'}}>
+      <div style={{background:'#13132a',borderBottom:'1px solid rgba(255,255,255,.08)',padding:'0 24px'}}>
+        <div style={{maxWidth:960,margin:'0 auto',height:62,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+          <button onClick={onBack} style={{display:'flex',alignItems:'center',gap:7,background:'transparent',border:'none',color:'#94a3b8',cursor:'pointer',fontFamily:'inherit',fontSize:14,fontWeight:600}}
+            onMouseEnter={e=>e.currentTarget.style.color='#fff'} onMouseLeave={e=>e.currentTarget.style.color='#94a3b8'}>
+            <ArrowL s={16} c="currentColor"/> Back to Plans
+          </button>
+          <div style={{display:'flex',alignItems:'center',gap:10}}>
+            <div style={{width:28,height:28,borderRadius:7,background:'linear-gradient(135deg,#a855f7,#22d3ee)',display:'flex',alignItems:'center',justifyContent:'center'}}><Play s={13} c="#fff" fill="#fff"/></div>
+            <span style={{fontWeight:800,fontSize:17,color:'#fff'}}>View<span style={{color:'#a855f7'}}>Boost</span></span>
+            <span style={{color:'#4b5563',fontSize:13,marginLeft:4}}>/ Checkout</span>
+          </div>
+          <div style={{fontSize:12,color:'#4ade80'}}>🔒 Secure Checkout</div>
+        </div>
+      </div>
+      <div style={{maxWidth:900,margin:'0 auto',padding:'36px 20px 64px',display:'grid',gridTemplateColumns:'1fr 360px',gap:32,alignItems:'start'}}>
+        <div>
+          <h2 style={{fontSize:22,fontWeight:800,color:'#fff',marginBottom:6}}>Billing Information</h2>
+          <p style={{fontSize:13,color:'#64748b',marginBottom:28}}>⚡ Demo mode — no real charge. Any card details accepted.</p>
+          <form onSubmit={handleSubmit} style={{display:'flex',flexDirection:'column',gap:20}}>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
+              <div><label style={{display:'block',fontSize:12,fontWeight:700,color:'#94a3b8',marginBottom:7,textTransform:'uppercase',letterSpacing:'0.05em'}}>Full Name</label><input className="checkout-input" value={name} onChange={e=>setName(e.target.value)} placeholder="John Smith" style={iStyle('name')}/>{errors.name&&<div style={{fontSize:11,color:'#ef4444',marginTop:5}}>⚠ {errors.name}</div>}</div>
+              <div><label style={{display:'block',fontSize:12,fontWeight:700,color:'#94a3b8',marginBottom:7,textTransform:'uppercase',letterSpacing:'0.05em'}}>Email</label><input className="checkout-input" type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com" style={iStyle('email')}/>{errors.email&&<div style={{fontSize:11,color:'#ef4444',marginTop:5}}>⚠ {errors.email}</div>}</div>
+            </div>
+            <div><label style={{display:'block',fontSize:12,fontWeight:700,color:'#94a3b8',marginBottom:7,textTransform:'uppercase',letterSpacing:'0.05em'}}>Card Number</label>
+              <div style={{position:'relative'}}><input className="checkout-input" value={card} onChange={e=>setCard(fmtCard(e.target.value))} placeholder="1234 5678 9012 3456" maxLength={19} style={{...iStyle('card'),paddingRight:80}}/><div style={{position:'absolute',right:14,top:'50%',transform:'translateY(-50%)',fontSize:12,color:'#64748b'}}>💳 {cardBrand(card)}</div></div>
+              {errors.card&&<div style={{fontSize:11,color:'#ef4444',marginTop:5}}>⚠ {errors.card}</div>}
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
+              <div><label style={{display:'block',fontSize:12,fontWeight:700,color:'#94a3b8',marginBottom:7,textTransform:'uppercase',letterSpacing:'0.05em'}}>Expiry</label><input className="checkout-input" value={expiry} onChange={e=>setExpiry(fmtExpiry(e.target.value))} placeholder="MM/YY" maxLength={5} style={iStyle('expiry')}/>{errors.expiry&&<div style={{fontSize:11,color:'#ef4444',marginTop:5}}>⚠ {errors.expiry}</div>}</div>
+              <div><label style={{display:'block',fontSize:12,fontWeight:700,color:'#94a3b8',marginBottom:7,textTransform:'uppercase',letterSpacing:'0.05em'}}>CVV</label><input className="checkout-input" value={cvv} onChange={e=>setCvv(e.target.value.replace(/\D/g,'').slice(0,3))} placeholder="123" maxLength={3} style={iStyle('cvv')}/>{errors.cvv&&<div style={{fontSize:11,color:'#ef4444',marginTop:5}}>⚠ {errors.cvv}</div>}</div>
+            </div>
+            <button type="submit" style={{padding:'16px',borderRadius:13,border:'none',background:`linear-gradient(135deg,${pkg.accent},${pkg.accent}cc)`,color:'#fff',fontWeight:800,fontSize:17,cursor:'pointer',fontFamily:'inherit',boxShadow:`0 0 28px ${pkg.accent}44`,marginTop:4}}>
+              Complete Purchase — ${pkg.price}
+            </button>
+            <div style={{display:'flex',gap:20,flexWrap:'wrap',justifyContent:'center',paddingTop:4}}>
+              {['🔒 256-bit SSL','🛡️ Secure Payment','⚡ Instant Points','↩️ Cancel Anytime'].map(t=><span key={t} style={{fontSize:11,color:'#4b5563'}}>{t}</span>)}
+            </div>
+          </form>
+        </div>
+        <div style={{position:'sticky',top:24}}>
+          <div style={{background:'#1a1a2e',border:`1px solid ${pkg.accent}30`,borderRadius:16,overflow:'hidden'}}>
+            <div style={{background:`linear-gradient(135deg,${pkg.accent}18,${pkg.accent}08)`,padding:'20px 22px',borderBottom:`1px solid ${pkg.accent}20`}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+                <span style={{fontWeight:800,fontSize:18,color:'#fff'}}>{pkg.name} Pack</span>
+                {pkg.badge&&<span style={{background:pkg.accent,color:'#fff',fontSize:10,fontWeight:800,padding:'3px 10px',borderRadius:999}}>{pkg.badge}</span>}
+              </div>
+              <div style={{display:'flex',alignItems:'baseline',gap:6}}><span style={{fontSize:34,fontWeight:800,color:'#fff'}}>${pkg.price}</span><span style={{fontSize:13,color:'#64748b'}}>one-time</span></div>
+            </div>
+            <div style={{padding:'18px 22px'}}>
+              <div style={{display:'flex',alignItems:'center',gap:10,background:'#0f0f1a',borderRadius:10,padding:'12px 14px',marginBottom:16}}><Coins s={22} c="#f59e0b"/><div><div style={{fontWeight:800,fontSize:20,color:'#f59e0b'}}>{pkg.pts.toLocaleString()}</div><div style={{fontSize:11,color:'#64748b'}}>Points added instantly</div></div></div>
+              <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:18}}>{pkg.features.map(f=><div key={f} style={{display:'flex',alignItems:'center',gap:8,fontSize:13,color:'#94a3b8'}}><Check s={13} c={pkg.accent}/>{f}</div>)}</div>
+              <div style={{borderTop:'1px solid rgba(255,255,255,.06)',paddingTop:14,marginBottom:14}}>
+                <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}><span style={{fontSize:13,color:'#64748b'}}>Subtotal</span><span style={{fontSize:13,color:'#fff'}}>${pkg.price}</span></div>
+                <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}><span style={{fontSize:13,color:'#64748b'}}>Tax</span><span style={{fontSize:13,color:'#4ade80'}}>$0.00</span></div>
+                <div style={{display:'flex',justifyContent:'space-between',paddingTop:10,borderTop:'1px solid rgba(255,255,255,.06)'}}><span style={{fontSize:15,fontWeight:800,color:'#fff'}}>Total</span><span style={{fontSize:18,fontWeight:800,color:pkg.accent}}>${pkg.price}</span></div>
+              </div>
+              {[['🔒','SSL secured'],['⚡','Points delivered instantly'],['↩️','No recurring charges']].map(([ic,txt])=><div key={txt} style={{display:'flex',alignItems:'center',gap:8,fontSize:12,color:'#4b5563',marginBottom:6}}><span>{ic}</span>{txt}</div>)}
+            </div>
+          </div>
+          <div style={{marginTop:12,padding:'10px 14px',background:'rgba(245,158,11,.08)',border:'1px solid rgba(245,158,11,.2)',borderRadius:10,fontSize:11,color:'#92400e',textAlign:'center'}}>⚡ <strong style={{color:'#f59e0b'}}>Demo mode</strong> — no real charge. Any card details accepted.</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Discover Tab ──────────────────────────────────────────────────────────────
+function DiscoverTab({ user, campaigns, setActiveTab, setActiveTask, onCheckout }) {
+  const [leaderboard, setLeaderboard] = useState([]);
+  const active = campaigns.filter(c=>c.delivered<c.target);
+  const history = []; // public history not needed here
+
+  useEffect(()=>{
+    fetchLeaderboard().then(setLeaderboard);
+  },[]);
+
+  const totalPts = leaderboard.reduce((s,u)=>s+(u.total_earned||0),0);
+  const rankColors=['#f59e0b','#94a3b8','#cd7c32'];
+
+  const FOOTER_PAGES_LOCAL = {
+    privacy:{ title:'Privacy Policy', icon:'🔒', lastUpdated:'May 8, 2026', sections:[{heading:'Information We Collect',body:'When you create a ViewBoost account we collect your name, email address, and password (secured by Supabase Auth). We also store campaigns you create, tasks you complete, and your points balance. No payment information is stored by ViewBoost.'},{heading:'Data Storage',body:'ViewBoost uses Supabase for secure authentication and data storage. All data is encrypted at rest and in transit using industry-standard TLS. Your password is never stored in plain text.'},{heading:'YouTube Integration',body:'When you complete a "Watch + Subscribe" task, ViewBoost opens YouTube\'s official subscription page in a new tab. We do not access your YouTube account credentials.'},{heading:'Contact',body:'privacy@viewboost.io'}]},
+    terms:{ title:'Terms & Conditions', icon:'📋', lastUpdated:'May 8, 2026', sections:[{heading:'Acceptance of Terms',body:'By creating a ViewBoost account you agree to these Terms & Conditions.'},{heading:'Prohibited Activities',body:'You may not use bots, create multiple accounts, submit false confirmations, or engage in fraudulent activity.'},{heading:'Points System',body:'Points have no monetary value. ViewBoost reserves the right to adjust balances in cases of suspected abuse.'},{heading:'Contact',body:'legal@viewboost.io'}]},
+    about:{ title:'About ViewBoost', icon:'🚀', lastUpdated:null, sections:[{heading:'What is ViewBoost?',body:'ViewBoost is a community-powered view-for-view exchange platform for YouTube creators built on React and Supabase.'},{heading:'Our Mission',body:'We\'re building a level playing field for YouTube creators of all sizes through genuine engagement.'},{heading:'Technology',body:'ViewBoost is built with React and powered by Supabase for real authentication and real-time data storage.'},{heading:'Contact',body:'hello@viewboost.io'}]},
+  };
+
+  const [footerPage, setFooterPage] = useState(null);
+
+  function startTask(camp) { setActiveTask(camp); setActiveTab('earn'); }
+
+  return (
+    <div className="fade-up" style={{display:'flex',flexDirection:'column',gap:32}}>
+      {/* Hero */}
+      <div style={{background:'linear-gradient(135deg,#1e1140 0%,#0f1a2e 50%,#1a0f2e 100%)',borderRadius:18,border:'1px solid rgba(168,85,247,.2)',padding:'28px 32px',position:'relative',overflow:'hidden'}}>
+        <div style={{position:'absolute',top:-60,right:-60,width:200,height:200,background:'radial-gradient(circle,rgba(168,85,247,.15),transparent 70%)',pointerEvents:'none'}}/>
+        <div style={{position:'relative'}}>
+          <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
+            <Globe s={20} c="#a855f7"/>
+            <h2 style={{fontSize:22,fontWeight:800,color:'#fff',letterSpacing:'-0.3px'}}>ViewBoost Platform</h2>
+          </div>
+          <p style={{fontSize:13,color:'#94a3b8',marginBottom:22,maxWidth:480}}>A live view-for-view exchange. Watch videos, earn points, spend them to grow your channel — every task is real, every view is earned. Powered by Supabase.</p>
+          <div style={{display:'flex',gap:16,flexWrap:'wrap'}}>
+            {[{icon:'👥',val:leaderboard.length,label:'Members'},{icon:'🚀',val:active.length,label:'Active Campaigns'},{icon:'⚡',val:totalPts.toLocaleString(),label:'Points Distributed'},{icon:'✅',val:leaderboard.reduce((s,u)=>s+(u.tasks_completed||0),0),label:'Tasks Completed'}].map(s=>(
+              <div key={s.label} style={{background:'rgba(255,255,255,.05)',borderRadius:12,padding:'12px 18px',border:'1px solid rgba(255,255,255,.07)'}}>
+                <div style={{fontSize:22,marginBottom:4}}>{s.icon}</div>
+                <div style={{fontSize:22,fontWeight:800,color:'#fff'}}>{s.val}</div>
+                <div style={{fontSize:11,color:'#64748b'}}>{s.label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* How It Works */}
+      <div>
+        <h3 style={{fontSize:16,fontWeight:800,color:'#fff',marginBottom:16,display:'flex',alignItems:'center',gap:8}}><Zap s={16} c="#f59e0b"/> How ViewBoost Works</h3>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))',gap:12}}>
+          {[{n:1,icon:'📺',t:'Choose a Task',c:'#22d3ee',d:'Browse live campaigns. Each task shows the video, required watch time, and point reward.'},
+            {n:2,icon:'⏱️',t:'Complete the Task',c:'#a855f7',d:'Watch for the required time. Subscribe or comment depending on the task type.'},
+            {n:3,icon:'🏆',t:'Earn Points',c:'#f59e0b',d:'Claim your points. Instantly saved to your Supabase account — accessible from any device.'},
+            {n:4,icon:'🚀',t:'Promote Your Video',c:'#4ade80',d:'Spend points in the Promote tab to get real human viewers on your content.'},
+          ].map(s=>(
+            <div key={s.n} style={{background:'#1a1a2e',border:`1px solid ${s.c}25`,borderRadius:14,padding:'18px 16px',display:'flex',flexDirection:'column',gap:10}}>
+              <div style={{display:'flex',alignItems:'center',gap:10}}>
+                <div style={{width:28,height:28,borderRadius:8,background:`${s.c}20`,border:`1px solid ${s.c}40`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:800,color:s.c}}>0{s.n}</div>
+                <span style={{fontSize:18}}>{s.icon}</span>
+              </div>
+              <div style={{fontWeight:700,fontSize:14,color:'#fff'}}>{s.t}</div>
+              <div style={{fontSize:12,color:'#64748b',lineHeight:1.5}}>{s.d}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Live Promotions */}
+      <div>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
+          <h3 style={{fontSize:16,fontWeight:800,color:'#fff',display:'flex',alignItems:'center',gap:8}}>
+            <BarChart s={16} c="#22d3ee"/> Live Promotions
+            <span style={{background:'rgba(34,211,238,.15)',color:'#22d3ee',border:'1px solid rgba(34,211,238,.3)',borderRadius:999,padding:'2px 10px',fontSize:11,fontWeight:700}}>{active.length} active</span>
+          </h3>
+          <button onClick={()=>setActiveTab('earn')} style={{display:'flex',alignItems:'center',gap:5,background:'transparent',border:'1px solid rgba(255,255,255,.1)',borderRadius:8,padding:'6px 12px',color:'#94a3b8',fontSize:12,cursor:'pointer',fontFamily:'inherit',fontWeight:600}}
+            onMouseEnter={e=>{e.currentTarget.style.color='#fff';e.currentTarget.style.borderColor='rgba(255,255,255,.3)'}}
+            onMouseLeave={e=>{e.currentTarget.style.color='#94a3b8';e.currentTarget.style.borderColor='rgba(255,255,255,.1)'}}>
+            Earn Points →
+          </button>
+        </div>
+        {active.length===0
+          ? <div style={{textAlign:'center',padding:'32px 0',color:'#374151',fontSize:13}}>No active campaigns right now.</div>
+          : <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(280px,1fr))',gap:10}}>
+              {active.map(c=><CampaignCard key={c.id} campaign={c} actionLabel={`Earn +${TASK_DEFS[c.taskType]?.pts||50} pts`} onAction={()=>startTask(c)}/>)}
+            </div>}
+      </div>
+
+      {/* Leaderboard */}
+      <div>
+        <h3 style={{fontSize:16,fontWeight:800,color:'#fff',marginBottom:14,display:'flex',alignItems:'center',gap:8}}><Trophy s={16} c="#f59e0b"/> Top Members</h3>
+        <div style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,.06)',borderRadius:14,overflow:'hidden'}}>
+          <div style={{display:'grid',gridTemplateColumns:'48px 1fr 120px 100px 80px',padding:'10px 16px',background:'rgba(255,255,255,.03)',borderBottom:'1px solid rgba(255,255,255,.06)',fontSize:11,fontWeight:700,color:'#4b5563',textTransform:'uppercase',letterSpacing:'0.05em'}}>
+            <span>#</span><span>Member</span><span style={{textAlign:'right'}}>Balance</span><span style={{textAlign:'right'}}>Tasks</span><span style={{textAlign:'right'}}>Earned</span>
+          </div>
+          {leaderboard.length===0
+            ? <div style={{padding:'24px',textAlign:'center',color:'#374151',fontSize:13}}>Loading members…</div>
+            : leaderboard.map((u,i)=>{
+                const isMe=u.id===user.id;
+                const rankCol=i<3?rankColors[i]:'#374151';
+                return (
+                  <div key={u.id} style={{display:'grid',gridTemplateColumns:'48px 1fr 120px 100px 80px',padding:'12px 16px',borderBottom:i<leaderboard.length-1?'1px solid rgba(255,255,255,.04)':'none',alignItems:'center',background:isMe?'rgba(168,85,247,.06)':'transparent'}}>
+                    <div style={{fontWeight:800,fontSize:i<3?16:13,color:rankCol}}>{i===0?'🥇':i===1?'🥈':i===2?'🥉':`${i+1}`}</div>
+                    <div style={{display:'flex',alignItems:'center',gap:10}}>
+                      <div style={{width:32,height:32,borderRadius:999,background:`linear-gradient(135deg,${i<3?rankCol:'#374151'},${i<3?rankCol+'88':'#1f2937'})`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:800,color:'#fff',flexShrink:0}}>{initials(u.name)}</div>
+                      <div>
+                        <div style={{fontWeight:600,fontSize:13,color:'#fff',display:'flex',alignItems:'center',gap:6}}>
+                          {u.name}
+                          {isMe&&<span style={{background:'rgba(168,85,247,.2)',color:'#a855f7',border:'1px solid rgba(168,85,247,.4)',borderRadius:999,padding:'1px 7px',fontSize:10,fontWeight:700}}>You</span>}
+                        </div>
+                        <div style={{fontSize:11,color:'#4b5563'}}>Joined {fmtDate(u.created_at)}</div>
+                      </div>
+                    </div>
+                    <div style={{textAlign:'right',fontWeight:700,fontSize:13,color:'#f59e0b',display:'flex',alignItems:'center',justifyContent:'flex-end',gap:4}}><Coins s={11} c="#f59e0b"/>{(u.points||0).toLocaleString()}</div>
+                    <div style={{textAlign:'right',fontWeight:600,fontSize:13,color:'#94a3b8'}}>{u.tasks_completed||0}</div>
+                    <div style={{textAlign:'right',fontWeight:600,fontSize:13,color:'#4ade80'}}>+{u.total_earned||0}</div>
+                  </div>
+                );
+              })}
+        </div>
+      </div>
+
+      {/* Buy Points — Coming Soon */}
+      <div>
+        <div style={{textAlign:'center',marginBottom:20}}>
+          <h3 style={{fontSize:22,fontWeight:800,color:'#fff',marginBottom:8,display:'flex',alignItems:'center',justifyContent:'center',gap:10}}><ShoppingB s={20} c="#a855f7"/> Buy Points</h3>
+          <p style={{fontSize:13,color:'#64748b',maxWidth:440,margin:'0 auto'}}>New accounts receive <span style={{color:'#f59e0b',fontWeight:700}}>2,000 points free</span> on signup. Paid plans launching soon.</p>
+        </div>
+        <div style={{background:'linear-gradient(135deg,rgba(245,158,11,.12),rgba(168,85,247,.12))',border:'1px solid rgba(245,158,11,.3)',borderRadius:14,padding:'16px 22px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:16,marginBottom:20,flexWrap:'wrap'}}>
+          <div style={{display:'flex',alignItems:'center',gap:14}}><span style={{fontSize:32}}>🎁</span><div><div style={{fontWeight:800,fontSize:15,color:'#fff'}}>New Member Bonus — Completely Free</div><div style={{fontSize:12,color:'#94a3b8',marginTop:2}}>Create a free account and instantly receive <strong style={{color:'#f59e0b'}}>2,000 points</strong>. No card required.</div></div></div>
+          <div style={{textAlign:'center',flexShrink:0}}><div style={{fontSize:28,fontWeight:800,color:'#f59e0b'}}>2,000 pts</div><div style={{fontSize:11,color:'#64748b'}}>on signup · free forever</div></div>
+        </div>
+        <div style={{position:'relative',borderRadius:18,overflow:'hidden'}}>
+          <div style={{filter:'blur(3px) grayscale(.6)',opacity:.45,pointerEvents:'none',userSelect:'none'}}>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))',gap:14}}>
+              {PACKAGES.map(pkg=>(
+                <div key={pkg.id} style={{background:'#1a1a2e',border:`1px solid ${pkg.accent}40`,borderRadius:16,padding:'22px 20px',position:'relative'}}>
+                  {pkg.badge&&<div style={{position:'absolute',top:-11,left:'50%',transform:'translateX(-50%)',background:pkg.accent,color:'#fff',fontSize:10,fontWeight:800,padding:'3px 14px',borderRadius:999}}>{pkg.badge}</div>}
+                  <div style={{fontWeight:800,fontSize:15,color:pkg.accent,marginBottom:8}}>{pkg.name}</div>
+                  <div style={{fontSize:30,fontWeight:800,color:'#fff',marginBottom:4}}>${pkg.price}</div>
+                  <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:16}}><Coins s={14} c="#f59e0b"/><span style={{fontWeight:700,fontSize:16,color:'#f59e0b'}}>{pkg.pts.toLocaleString()}</span><span style={{fontSize:12,color:'#64748b'}}>points</span></div>
+                  <div style={{display:'flex',flexDirection:'column',gap:6,marginBottom:18}}>{pkg.features.map(f=><div key={f} style={{display:'flex',alignItems:'center',gap:7,fontSize:12,color:'#94a3b8'}}><Check s={12} c={pkg.accent}/>{f}</div>)}</div>
+                  <div style={{width:'100%',padding:'11px',borderRadius:10,background:pkg.badge?pkg.accent:'transparent',border:pkg.badge?'none':`1px solid ${pkg.accent}40`,color:pkg.badge?'#fff':pkg.accent,fontWeight:700,fontSize:13,textAlign:'center'}}>{pkg.badge?'Buy Now →':'Get Started →'}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'rgba(15,15,26,.6)',backdropFilter:'blur(2px)',borderRadius:18,border:'1px solid rgba(168,85,247,.2)'}}>
+            <div style={{textAlign:'center',padding:'32px 24px',maxWidth:420}}>
+              <div style={{fontSize:48,marginBottom:12}}>🔒</div>
+              <div style={{display:'inline-flex',alignItems:'center',gap:8,background:'linear-gradient(135deg,#a855f7,#7c3aed)',color:'#fff',fontWeight:800,fontSize:13,padding:'4px 16px',borderRadius:999,marginBottom:14,boxShadow:'0 0 20px rgba(168,85,247,.4)'}}>Coming Soon</div>
+              <h3 style={{fontSize:20,fontWeight:800,color:'#fff',marginBottom:8}}>Paid Plans Launching Soon</h3>
+              <p style={{fontSize:13,color:'#94a3b8',lineHeight:1.6,marginBottom:20}}>We're integrating our secure payment system. Paid point packages will be available very soon — powered by <strong style={{color:'#fff'}}>Supabase</strong> for authentication &amp; real-time data.</p>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'center'}}><div style={{display:'flex',alignItems:'center',gap:6,background:'rgba(255,255,255,.05)',border:'1px solid rgba(255,255,255,.1)',borderRadius:8,padding:'6px 14px',fontSize:12,color:'#94a3b8'}}>⚡ Keep earning free points in the meantime</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {footerPage&&(
+        <div className="fade-in" style={{position:'fixed',inset:0,background:'rgba(0,0,0,.75)',zIndex:2000,overflowY:'auto',padding:'24px 16px'}} onClick={e=>{if(e.target===e.currentTarget)setFooterPage(null);}}>
+          <div className="fade-up" style={{maxWidth:680,margin:'0 auto',background:'#13132a',border:'1px solid rgba(255,255,255,.08)',borderRadius:18,overflow:'hidden'}}>
+            <div style={{background:'linear-gradient(135deg,#1e1140,#13132a)',padding:'24px 28px',borderBottom:'1px solid rgba(255,255,255,.06)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+              <div style={{display:'flex',alignItems:'center',gap:12}}><span style={{fontSize:28}}>{FOOTER_PAGES_LOCAL[footerPage]?.icon}</span><div><h2 style={{fontSize:20,fontWeight:800,color:'#fff'}}>{FOOTER_PAGES_LOCAL[footerPage]?.title}</h2>{FOOTER_PAGES_LOCAL[footerPage]?.lastUpdated&&<div style={{fontSize:11,color:'#4b5563',marginTop:2}}>Last updated: {FOOTER_PAGES_LOCAL[footerPage].lastUpdated}</div>}</div></div>
+              <button onClick={()=>setFooterPage(null)} style={{background:'rgba(255,255,255,.06)',border:'1px solid rgba(255,255,255,.1)',borderRadius:8,width:32,height:32,color:'#94a3b8',cursor:'pointer',fontSize:16,display:'flex',alignItems:'center',justifyContent:'center'}}>✕</button>
+            </div>
+            <div style={{padding:'28px',display:'flex',flexDirection:'column',gap:22}}>
+              {FOOTER_PAGES_LOCAL[footerPage]?.sections.map((s,i)=>(
+                <div key={i}><h3 style={{fontSize:14,fontWeight:700,color:'#a855f7',marginBottom:7,display:'flex',alignItems:'center',gap:7}}><span style={{display:'inline-block',width:4,height:14,background:'#a855f7',borderRadius:2}}/>{s.heading}</h3><p style={{fontSize:13,color:'#94a3b8',lineHeight:1.7}}>{s.body}</p></div>
+              ))}
+            </div>
+            <div style={{padding:'16px 28px',borderTop:'1px solid rgba(255,255,255,.06)',display:'flex',justifyContent:'flex-end'}}><button onClick={()=>setFooterPage(null)} style={{padding:'9px 24px',borderRadius:9,border:'none',background:'linear-gradient(135deg,#a855f7,#7c3aed)',color:'#fff',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}>Close</button></div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Earn Tab ──────────────────────────────────────────────────────────────────
+function EarnTab({ user, campaigns, onClaim, activeTask, setActiveTask }) {
+  const [timeLeft,setTimeLeft]=useState(0);
+  const [timerDone,setTimerDone]=useState(false);
+  const [subStep,setSubStep]=useState('idle');
+  const [comment,setComment]=useState('');
+  const [claimed,setClaimed]=useState(false);
+  const [claiming,setClaiming]=useState(false);
+  const intRef=useRef(null);
+
+  useEffect(()=>{
+    if(!activeTask)return;
+    setTimeLeft(activeTask.watchDuration);setTimerDone(false);setSubStep('idle');setComment('');setClaimed(false);
+  },[activeTask?.id]);
+
+  useEffect(()=>{
+    if(!activeTask||timerDone||claimed){clearInterval(intRef.current);return;}
+    clearInterval(intRef.current);
+    intRef.current=setInterval(()=>setTimeLeft(t=>Math.max(0,t-1)),1000);
+    return()=>clearInterval(intRef.current);
+  },[activeTask?.id,timerDone,claimed]);
+
+  useEffect(()=>{if(timeLeft===0&&activeTask&&!timerDone)setTimerDone(true);},[timeLeft]);
+
+  async function handleClaim(){
+    setClaiming(true);
+    const d=TASK_DEFS[activeTask.taskType];
+    await onClaim(activeTask, d.pts);
+    setClaimed(true); setClaiming(false);
+  }
+
+  function handleSubscribeOpen(){
+    const ch=activeTask.channelUrl||activeTask.url;
+    window.open(ch.includes('?')?`${ch}&sub_confirmation=1`:`${ch}?sub_confirmation=1`,'_blank');
+    setSubStep('opened');
+  }
+  function handleBack(){clearInterval(intRef.current);setActiveTask(null);}
+
+  const canClaim=timerDone&&!claimed&&!claiming&&(activeTask?.taskType==='watch'?true:activeTask?.taskType==='subscribe'?subStep==='done':comment.trim().length>0);
+  const avail=campaigns.filter(c=>c.delivered<c.target);
+
+  if(!activeTask) return (
+    <div className="fade-up" style={{display:'flex',flexDirection:'column',gap:16}}>
+      <div><h2 style={{fontSize:17,fontWeight:800,color:'#fff',marginBottom:4}}>Choose a Task to Earn</h2><p style={{fontSize:13,color:'#64748b'}}>Pick a task below. Your earnings are saved to your Supabase account.</p></div>
+      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+        {Object.entries(TASK_DEFS).map(([k,d])=>(
+          <div key={k} style={{display:'flex',alignItems:'center',gap:6,background:'#1a1a2e',border:`1px solid ${d.accent}25`,borderRadius:8,padding:'7px 12px',flex:1,minWidth:150}}>
+            <span style={{fontSize:17}}>{d.emoji}</span><div><div style={{fontSize:11,fontWeight:700,color:d.accent}}>{d.label}</div><div style={{fontSize:10,color:'#4b5563'}}>{d.pts} pts</div></div>
+          </div>
+        ))}
+      </div>
+      <div style={{display:'flex',flexDirection:'column',gap:10}}>
+        {avail.length===0
+          ? <div style={{textAlign:'center',padding:'40px 0',color:'#4b5563',fontSize:13}}>No tasks available right now.</div>
+          : avail.map(c=>(
+            <div key={c.id} className="fade-up" style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,.06)',borderRadius:14,padding:'15px 18px',display:'flex',flexDirection:'column',gap:10}}
+              onMouseEnter={e=>{e.currentTarget.style.borderColor=`${TASK_DEFS[c.taskType]?.accent||'#a855f7'}50`;}}
+              onMouseLeave={e=>{e.currentTarget.style.borderColor='rgba(255,255,255,.06)';}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                <TaskBadge taskType={c.taskType}/>
+                <span style={{fontWeight:800,fontSize:16,color:TASK_DEFS[c.taskType]?.accent}}> +{TASK_DEFS[c.taskType]?.pts} pts</span>
+              </div>
+              <div><div style={{fontWeight:700,fontSize:14,color:'#fff',marginBottom:3}}>{c.title}</div><div style={{display:'flex',alignItems:'center',gap:4,color:'#64748b',fontSize:12}}><ExtLink s={10} c="#64748b"/>{c.url.slice(0,46)}{c.url.length>46?'…':''}</div></div>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                <span style={{display:'flex',alignItems:'center',gap:5,color:'#64748b',fontSize:12}}><Clock s={12} c="#64748b"/>Watch {c.watchDuration}s</span>
+                <button onClick={()=>setActiveTask(c)} style={{display:'flex',alignItems:'center',gap:6,padding:'7px 14px',borderRadius:8,border:'none',background:`${TASK_DEFS[c.taskType]?.accent||'#a855f7'}dd`,color:'#fff',fontWeight:700,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>
+                  <Play s={11} c="#fff" fill="#fff"/> Start Task
+                </button>
+              </div>
+            </div>
+          ))}
+      </div>
+    </div>
+  );
+
+  const d=TASK_DEFS[activeTask.taskType]||TASK_DEFS.watch;
+  const videoId=extractVideoId(activeTask.url)||'dQw4w9WgXcQ';
+  return (
+    <div className="fade-up" style={{display:'flex',flexDirection:'column',gap:16}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+        <button onClick={handleBack} style={{display:'flex',alignItems:'center',gap:6,background:'transparent',border:'1px solid rgba(255,255,255,.1)',borderRadius:8,padding:'6px 12px',color:'#94a3b8',cursor:'pointer',fontFamily:'inherit',fontSize:12}}
+          onMouseEnter={e=>{e.currentTarget.style.color='#fff';e.currentTarget.style.borderColor='rgba(255,255,255,.3)'}}
+          onMouseLeave={e=>{e.currentTarget.style.color='#94a3b8';e.currentTarget.style.borderColor='rgba(255,255,255,.1)'}}>
+          <ArrowL s={13} c="currentColor"/> Back
+        </button>
+        <div style={{display:'flex',alignItems:'center',gap:10}}><TaskBadge taskType={activeTask.taskType}/><span style={{fontWeight:800,fontSize:15,color:d.accent}}>+{d.pts} pts</span></div>
+      </div>
+      <div style={{textAlign:'center'}}><div style={{fontWeight:700,fontSize:15,color:'#fff',marginBottom:3}}>{activeTask.title}</div><div style={{fontSize:12,color:'#64748b'}}>{d.desc}</div></div>
+      <div style={{borderRadius:14,overflow:'hidden',border:'1px solid rgba(255,255,255,.06)',boxShadow:`0 0 48px ${d.accent}18`,aspectRatio:'16/9',background:'#0d0d1f'}}>
+        <iframe key={videoId} src={`https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1`} style={{width:'100%',height:'100%',border:'none'}} allow="autoplay; encrypted-media" allowFullScreen/>
+      </div>
+      <div style={{background:'#13132a',borderRadius:14,border:'1px solid rgba(255,255,255,.06)',padding:'20px 22px',display:'flex',gap:24,alignItems:'flex-start',flexWrap:'wrap'}}>
+        <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:6}}>
+          <TimerRing timeLeft={timeLeft} totalTime={activeTask.watchDuration} done={timerDone}/>
+          <span style={{fontSize:10,color:timerDone?'#4ade80':'#64748b',fontWeight:600,textTransform:'uppercase',letterSpacing:'0.05em'}}>{timerDone?'✓ Done':'Watch Timer'}</span>
+        </div>
+        <div style={{flex:1,minWidth:200,display:'flex',flexDirection:'column',gap:12}}>
+          {activeTask.taskType==='watch'&&<div style={{fontSize:13,color:timerDone?'#4ade80':'#94a3b8',display:'flex',alignItems:'center',gap:6}}>{timerDone?<><Check s={14} c="#4ade80"/> Watch complete!</>:<>Keep watching…</>}</div>}
+          {activeTask.taskType==='subscribe'&&(
+            <div style={{display:'flex',flexDirection:'column',gap:10}}>
+              <div style={{fontSize:13,color:timerDone?'#fff':'#4b5563',display:'flex',alignItems:'center',gap:6}}><Bell s={13} c={timerDone?'#a855f7':'#4b5563'}/>{timerDone?'Subscribe to the channel:':` Subscribe unlocks in ${timeLeft}s…`}</div>
+              {subStep==='idle'&&<button disabled={!timerDone} onClick={handleSubscribeOpen} className={timerDone?'pulse':''} style={{padding:'11px 16px',borderRadius:10,border:'none',fontFamily:'inherit',cursor:timerDone?'pointer':'not-allowed',fontWeight:700,fontSize:13,display:'flex',alignItems:'center',justifyContent:'center',gap:8,background:timerDone?'linear-gradient(135deg,#ff0000,#cc0000)':'#1f2937',color:timerDone?'#fff':'#4b5563',boxShadow:timerDone?'0 0 20px rgba(255,0,0,.3)':'none',transition:'all .2s'}}><Youtube s={16} c="white"/> {timerDone?'▶ Subscribe on YouTube':`Locked — ${timeLeft}s remaining`}</button>}
+              {subStep==='opened'&&<div style={{display:'flex',flexDirection:'column',gap:8}}><div style={{fontSize:12,color:'#94a3b8',padding:'8px 12px',background:'rgba(168,85,247,.08)',borderRadius:8,border:'1px solid rgba(168,85,247,.2)'}}>✅ YouTube opened. Subscribe then confirm below.</div><div style={{display:'flex',gap:8}}><button onClick={()=>setSubStep('done')} style={{flex:1,padding:'10px',borderRadius:9,border:'none',background:'linear-gradient(135deg,#16a34a,#15803d)',color:'#fff',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:6}}><Check s={13} c="#fff"/> Yes, Subscribed</button><button onClick={()=>setSubStep('idle')} style={{padding:'10px 14px',borderRadius:9,border:'1px solid rgba(255,255,255,.1)',background:'transparent',color:'#94a3b8',fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>Not yet</button></div></div>}
+              {subStep==='done'&&<div style={{fontSize:13,color:'#4ade80',display:'flex',alignItems:'center',gap:6,padding:'10px 14px',background:'rgba(22,163,74,.12)',borderRadius:9,border:'1px solid rgba(74,222,128,.2)'}}><Check s={14} c="#4ade80"/> Subscribed! Claim your points.</div>}
+            </div>
+          )}
+          {activeTask.taskType==='comment'&&(
+            <div style={{display:'flex',flexDirection:'column',gap:8}}>
+              <div style={{fontSize:13,color:timerDone?'#fff':'#4b5563',display:'flex',alignItems:'center',gap:6}}><MsgSq s={13} c={timerDone?'#f59e0b':'#4b5563'}/>{timerDone?'Write your comment:':` Comment unlocks in ${timeLeft}s…`}</div>
+              <textarea disabled={!timerDone} value={comment} onChange={e=>setComment(e.target.value)} placeholder={timerDone?'Write a genuine comment…':'Waiting for watch timer…'} rows={3}
+                style={{padding:'10px 12px',borderRadius:8,border:`1px solid ${timerDone&&comment.trim()?'rgba(245,158,11,.5)':'rgba(255,255,255,.1)'}`,background:timerDone?'#0f0f1a':'#0a0a14',color:timerDone?'#fff':'#374151',fontSize:13,outline:'none',width:'100%'}}/>
+            </div>
+          )}
+          <button onClick={handleClaim} disabled={!canClaim} style={{padding:'12px',borderRadius:11,border:'none',fontFamily:'inherit',fontWeight:700,fontSize:15,marginTop:4,cursor:canClaim?'pointer':'not-allowed',background:claimed?'rgba(22,163,74,.2)':canClaim?`linear-gradient(135deg,${d.accent},${d.accent}99)`:'#1f2937',color:claimed?'#4ade80':canClaim?'#fff':'#4b5563',boxShadow:canClaim?`0 0 22px ${d.accent}44`:'none',transition:'all .2s',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+            {claiming&&<div className="spinner" style={{width:15,height:15}}/>}
+            {claimed?`✓ Saved to Supabase! +${d.pts} pts`:claiming?'Saving…':`Claim ${d.pts} Points`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Promote Tab ───────────────────────────────────────────────────────────────
+function PromoteTab({ user, campaigns, onLaunch }) {
+  const [url,setUrl]=useState('');
+  const [chan,setChan]=useState('');
+  const [type,setType]=useState('watch');
+  const [dur,setDur]=useState(30);
+  const [views,setViews]=useState(100);
+  const [launching,setLaunching]=useState(false);
+  const d=TASK_DEFS[type], cost=views*d.costPerView;
+  const can=url.trim().length>0&&(type==='watch'||chan.trim().length>0)&&user.points>=cost&&!launching;
+
+  async function launch(){
+    if(!can)return; setLaunching(true);
+    await onLaunch({ url:url.trim(), channelUrl:chan.trim()||url.trim(), title:`My Video #${Date.now().toString().slice(-4)}`, target:views, taskType:type, watchDuration:dur }, cost);
+    setUrl('');setChan('');setType('watch');setDur(30);setViews(100); setLaunching(false);
+  }
+
+  const mine=campaigns.filter(c=>c.ownerId===user.id);
+  const lbl=(t,s)=><div style={{marginBottom:8}}><label style={{fontSize:13,color:'#94a3b8',fontWeight:600}}>{t}</label>{s&&<span style={{fontSize:11,color:'#4b5563',marginLeft:6}}>{s}</span>}</div>;
+  const ti=(val,set,ph)=><input type="text" value={val} onChange={e=>set(e.target.value)} placeholder={ph} style={{width:'100%',padding:'11px 14px',borderRadius:9,border:'1px solid rgba(255,255,255,.1)',background:'#0f0f1a',color:'#fff',fontSize:13,outline:'none',fontFamily:'inherit',marginBottom:16}}/>;
+
+  return (
+    <div className="fade-up" style={{display:'flex',flexDirection:'column',gap:22}}>
+      <div style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,.06)',borderRadius:16,padding:22}}>
+        <h2 style={{fontSize:17,fontWeight:700,color:'#fff',marginBottom:18,display:'flex',alignItems:'center',gap:8}}><Rocket s={17} c="#a855f7"/> Launch a Campaign</h2>
+        {lbl('YouTube Video URL','(required)')}{ti(url,setUrl,'https://youtube.com/watch?v=...')}
+        {lbl('Your Channel URL',type!=='watch'?'(required)':'(optional)')}{ti(chan,setChan,'https://youtube.com/@YourChannel')}
+        <div style={{marginBottom:18}}>
+          {lbl('Task Type for Viewers')}
+          <div style={{display:'flex',flexDirection:'column',gap:7}}>
+            {Object.entries(TASK_DEFS).map(([k,td])=>{const a=type===k;return(
+              <div key={k} onClick={()=>setType(k)} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 14px',borderRadius:9,border:`1px solid ${a?td.accent+'60':'rgba(255,255,255,.07)'}`,background:a?`${td.accent}10`:'#0f0f1a',cursor:'pointer',transition:'all .15s'}}>
+                <div style={{display:'flex',alignItems:'center',gap:9}}><span style={{fontSize:18}}>{td.emoji}</span><div><div style={{fontWeight:700,fontSize:13,color:a?td.accent:'#fff'}}>{td.label}</div><div style={{fontSize:11,color:'#4b5563'}}>{td.desc}</div></div></div>
+                <div style={{textAlign:'right'}}><div style={{fontWeight:800,fontSize:13,color:a?td.accent:'#64748b'}}>{td.costPerView} pts/view</div><div style={{fontSize:10,color:'#4b5563'}}>earns {td.pts} pts</div></div>
+              </div>
+            );})}
+          </div>
+        </div>
+        <div style={{marginBottom:18}}>
+          <div style={{display:'flex',justifyContent:'space-between',marginBottom:8}}><label style={{fontSize:13,color:'#94a3b8',fontWeight:600,display:'flex',alignItems:'center',gap:5}}><Clock s={12} c="#94a3b8"/> Watch Time</label><span style={{fontSize:13,fontWeight:700,color:'#22d3ee'}}>{dur}s</span></div>
+          <input type="range" min={15} max={120} step={15} value={dur} onChange={e=>setDur(Number(e.target.value))}/>
+          <div style={{display:'flex',justifyContent:'space-between',marginTop:4,fontSize:10,color:'#374151'}}>{[15,30,45,60,75,90,105,120].map(v=><span key={v}>{v}s</span>)}</div>
+        </div>
+        <div style={{marginBottom:18}}>
+          <div style={{display:'flex',justifyContent:'space-between',marginBottom:8}}><label style={{fontSize:13,color:'#94a3b8',fontWeight:600,display:'flex',alignItems:'center',gap:5}}><Eye s={12} c="#94a3b8"/> Views to Buy</label><span style={{fontSize:13,fontWeight:700,color:'#22d3ee'}}>{views}</span></div>
+          <input type="range" min={10} max={500} step={10} value={views} onChange={e=>setViews(Number(e.target.value))}/>
+          <div style={{display:'flex',justifyContent:'space-between',marginTop:4,fontSize:10,color:'#374151'}}><span>10</span><span>500</span></div>
+        </div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:'#0f0f1a',borderRadius:9,padding:'11px 14px',marginBottom:18}}>
+          <div><div style={{fontSize:11,color:'#4b5563'}}>Total cost</div><div style={{fontSize:11,color:'#374151'}}>{views} × {d.costPerView} pts</div></div>
+          <span style={{fontWeight:800,fontSize:20,color:cost>user.points?'#ef4444':d.accent,display:'flex',alignItems:'center',gap:6}}><Coins s={15} c="#f59e0b"/>{cost.toLocaleString()} pts</span>
+        </div>
+        <button onClick={launch} disabled={!can} style={{width:'100%',padding:'13px',borderRadius:11,border:'none',fontFamily:'inherit',fontWeight:700,fontSize:15,cursor:can?'pointer':'not-allowed',background:can?`linear-gradient(135deg,${d.accent},${d.accent}99)`:'#1f2937',color:can?'#fff':'#4b5563',boxShadow:can?`0 0 24px ${d.accent}44`:'none',transition:'all .2s',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+          {launching&&<div className="spinner" style={{width:15,height:15}}/>}
+          {launching?'Saving to Supabase…':!url.trim()?'Paste a URL to continue':(type!=='watch'&&!chan.trim())?'Add your channel URL':user.points<cost?'Not enough points':`🚀 Launch — ${cost.toLocaleString()} pts`}
+        </button>
+      </div>
+      {mine.length>0&&(
+        <div>
+          <h3 style={{fontSize:14,fontWeight:700,color:'#fff',marginBottom:12,display:'flex',alignItems:'center',gap:7}}><BarChart s={14} c="#22d3ee"/> My Active Campaigns</h3>
+          <div style={{display:'flex',flexDirection:'column',gap:10}}>{mine.map(c=><CampaignCard key={c.id} campaign={c}/>)}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Dashboard Tab ─────────────────────────────────────────────────────────────
+function DashboardTab({ user, campaigns }) {
+  const [history, setHistory] = useState(null); // null = loading
+  const mine=campaigns.filter(c=>c.ownerId===user.id);
+
+  useEffect(()=>{
+    fetchEarnHistory(user.id).then(setHistory);
+  },[user.id]);
+
+  const totalEarned=(history||[]).reduce((s,h)=>s+h.pts,0);
+  const active=mine.filter(c=>c.delivered<c.target).length;
+  const icons={watch:'👁️',subscribe:'🔔',comment:'💬'};
+
+  return (
+    <div className="fade-up" style={{display:'flex',flexDirection:'column',gap:22}}>
+      <div style={{background:'linear-gradient(135deg,#1e1140,#1a1a2e)',border:'1px solid rgba(168,85,247,.2)',borderRadius:14,padding:'20px 22px',display:'flex',alignItems:'center',gap:16}}>
+        <div style={{width:52,height:52,borderRadius:999,background:'linear-gradient(135deg,#a855f7,#22d3ee)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,fontWeight:800,color:'#fff',flexShrink:0}}>{initials(user.name)}</div>
+        <div><div style={{fontSize:17,fontWeight:800,color:'#fff'}}>Welcome back, {(user.name||'').split(' ')[0]}! 👋</div><div style={{fontSize:12,color:'#94a3b8',marginTop:2}}>Member since {fmtDate(user.created_at||Date.now())} · <span style={{color:'#3ecf8e'}}>✓ Supabase account</span></div></div>
+        <div style={{marginLeft:'auto',textAlign:'right'}}><div style={{fontSize:22,fontWeight:800,color:'#f59e0b',display:'flex',alignItems:'center',gap:6}}><Coins s={18} c="#f59e0b"/>{(user.points||0).toLocaleString()}</div><div style={{fontSize:11,color:'#64748b'}}>current balance</div></div>
+      </div>
+      <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
+        {[['🏆','Total Pts Earned',totalEarned.toLocaleString(),'#f59e0b'],['✅','Tasks Completed',(history||[]).length,'#4ade80'],['🚀','Active Campaigns',active,'#a855f7'],['📅','Total Campaigns',mine.length,'#22d3ee']].map(([ic,lb,val,col])=>(
+          <div key={lb} style={{flex:1,minWidth:130,background:'#1a1a2e',border:`1px solid ${col}25`,borderRadius:12,padding:'16px',textAlign:'center'}}>
+            <div style={{fontSize:24,marginBottom:6}}>{ic}</div>
+            <div style={{fontSize:22,fontWeight:800,color:col}}>{val}</div>
+            <div style={{fontSize:11,color:'#64748b',marginTop:3}}>{lb}</div>
+          </div>
+        ))}
+      </div>
+      <div>
+        <h3 style={{fontSize:14,fontWeight:700,color:'#fff',marginBottom:12,display:'flex',alignItems:'center',gap:7}}><Trophy s={14} c="#f59e0b"/> Earnings History</h3>
+        {history===null
+          ? <div style={{textAlign:'center',padding:'28px 0',color:'#374151',fontSize:13,display:'flex',alignItems:'center',justifyContent:'center',gap:8}}><div className="spinner" style={{width:16,height:16}}/> Loading from Supabase…</div>
+          : history.length===0
+            ? <div style={{textAlign:'center',padding:'28px 0',color:'#374151',fontSize:13}}>No earnings yet. Complete tasks to start earning!</div>
+            : <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                {history.slice(0,20).map(h=>(
+                  <div key={h.id} style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,.05)',borderRadius:10,padding:'11px 14px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:10}}>
+                    <div style={{display:'flex',alignItems:'center',gap:10}}>
+                      <span style={{fontSize:18}}>{icons[h.task_type]||'⚡'}</span>
+                      <div><div style={{fontSize:13,fontWeight:600,color:'#fff'}}>{h.campaign_title}</div><div style={{fontSize:11,color:'#64748b',marginTop:1}}>{TASK_DEFS[h.task_type]?.label} · {fmtDate(h.earned_at)} {fmtTime(h.earned_at)}</div></div>
+                    </div>
+                    <span style={{fontWeight:800,fontSize:14,color:'#4ade80',whiteSpace:'nowrap'}}>+{h.pts} pts</span>
+                  </div>
+                ))}
+              </div>}
+      </div>
+      <div>
+        <h3 style={{fontSize:14,fontWeight:700,color:'#fff',marginBottom:12,display:'flex',alignItems:'center',gap:7}}><BarChart s={14} c="#22d3ee"/> My Campaign History</h3>
+        {mine.length===0
+          ? <div style={{textAlign:'center',padding:'28px 0',color:'#374151',fontSize:13}}>No campaigns yet. Go to Promote to launch one!</div>
+          : <div style={{display:'flex',flexDirection:'column',gap:8}}>{mine.map(c=>(
+              <div key={c.id}><CampaignCard campaign={c} compact/><div style={{fontSize:10,color:'#374151',marginTop:3,paddingLeft:4}}>Created {fmtDate(c.createdAt)}</div></div>
+            ))}</div>}
+      </div>
+    </div>
+  );
+}
+
+// ── Footer ────────────────────────────────────────────────────────────────────
+function Footer({ onOpenPage }) {
+  return (
+    <footer style={{borderTop:'1px solid rgba(255,255,255,.06)',marginTop:48,padding:'24px 20px'}}>
+      <div style={{maxWidth:960,margin:'0 auto',display:'flex',flexDirection:'column',alignItems:'center',gap:14}}>
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          <div style={{width:22,height:22,borderRadius:5,background:'linear-gradient(135deg,#a855f7,#22d3ee)',display:'flex',alignItems:'center',justifyContent:'center'}}><Play s={10} c="#fff" fill="#fff"/></div>
+          <span style={{fontWeight:800,fontSize:15,color:'#fff'}}>View<span style={{color:'#a855f7'}}>Boost</span></span>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',justifyContent:'center'}}>
+          {[['about','About Us'],['privacy','Privacy Policy'],['terms','Terms & Conditions']].map(([key,label],i,arr)=>(
+            <React.Fragment key={key}>
+              <button onClick={()=>onOpenPage(key)} style={{background:'none',border:'none',color:'#64748b',fontSize:13,cursor:'pointer',fontFamily:'inherit',padding:'2px 4px',transition:'color .15s'}}
+                onMouseEnter={e=>e.target.style.color='#a855f7'} onMouseLeave={e=>e.target.style.color='#64748b'}>{label}</button>
+              {i<arr.length-1&&<span style={{color:'#2d2d4e',fontSize:13}}>·</span>}
+            </React.Fragment>
+          ))}
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:16,flexWrap:'wrap',justifyContent:'center'}}>
+          <div style={{display:'flex',alignItems:'center',gap:6,background:'rgba(62,207,142,.06)',border:'1px solid rgba(62,207,142,.15)',borderRadius:7,padding:'4px 12px',fontSize:11,color:'#3ecf8e'}}>
+            <span style={{fontWeight:700}}>⚡</span> Powered by Supabase
+          </div>
+          <span style={{fontSize:11,color:'#2d2d4e'}}>© {new Date().getFullYear()} ViewBoost. All rights reserved.</span>
+        </div>
+      </div>
+    </footer>
+  );
+}
+
+// ── App ───────────────────────────────────────────────────────────────────────
+function App() {
+  const [user,       setUser]       = useState(null);
+  const [initLoading,setInitLoading]= useState(true);
+  const [tab,        setTab]        = useState('discover');
+  const [camps,      setCamps]      = useState([]);
+  const [task,       setTask]       = useState(null);
+  const [checkout,   setCheckout]   = useState(null);
+  const [footerPage, setFooterPage] = useState(null);
+
+  useEffect(()=>{
+    let mounted=true;
+
+    async function init() {
+      // Load campaigns for everyone (public data)
+      fetchCampaigns().then(data=>{ if(mounted) setCamps(data); });
+
+      // Check existing session
+      const { data:{ session } } = await supa.auth.getSession();
+      if(session && mounted){
+        const profile = await fetchProfile(session.user.id);
+        if(mounted) setUser({ id:session.user.id, email:session.user.email, ...(profile||{name:'',points:2000,tasks_completed:0,total_earned:0,created_at:new Date().toISOString()}) });
+      }
+      if(mounted) setInitLoading(false);
+    }
+    init();
+
+    // Listen for auth changes
+    const { data:{ subscription } } = supa.auth.onAuthStateChange(async(event, session)=>{
+      if(!mounted) return;
+      if(event==='SIGNED_OUT'){ setUser(null); setTab('discover'); setTask(null); }
+      if(event==='SIGNED_IN' && session){
+        const profile = await fetchProfile(session.user.id);
+        if(mounted) setUser({ id:session.user.id, email:session.user.email, ...(profile||{name:'',points:2000,tasks_completed:0,total_earned:0,created_at:new Date().toISOString()}) });
+      }
+    });
+
+    return ()=>{ mounted=false; subscription.unsubscribe(); };
+  },[]);
+
+  function setActiveTask(t){ setTask(t); if(t) setTab('earn'); }
+
+  // Earn: save to Supabase
+  async function handleClaim(task, pts) {
+    if(!user) return;
+    await supa.from('earn_history').insert({ user_id:user.id, campaign_id:task.id, campaign_title:task.title, task_type:task.taskType, pts });
+    const newPts=user.points+pts, newTasks=(user.tasks_completed||0)+1, newEarned=(user.total_earned||0)+pts;
+    await supa.from('profiles').update({ points:newPts, tasks_completed:newTasks, total_earned:newEarned }).eq('id',user.id);
+    setUser(u=>({...u, points:newPts, tasks_completed:newTasks, total_earned:newEarned}));
+  }
+
+  // Promote: save campaign to Supabase
+  async function handleLaunch(campData, cost) {
+    if(!user) return;
+    const { data } = await supa.from('campaigns').insert({
+      owner_id:user.id, url:campData.url, channel_url:campData.channelUrl,
+      title:campData.title, target:campData.target, delivered:0,
+      task_type:campData.taskType, watch_duration:campData.watchDuration
+    }).select().single();
+    const newPts=user.points-cost;
+    await supa.from('profiles').update({ points:newPts }).eq('id',user.id);
+    setUser(u=>({...u, points:newPts}));
+    if(data) setCamps(prev=>[mapCamp(data),...prev]);
+  }
+
+  if(initLoading) return <LoadingScreen/>;
+  if(!user) return <LoginScreen onLogin={u=>{setUser(u);setTab('discover');}}/>;
+
+  if(checkout) return (
+    <CheckoutPage pkg={checkout} user={user}
+      onUpdatePoints={pts=>setUser(u=>({...u,points:pts}))}
+      onBack={()=>setCheckout(null)}
+      onSuccess={()=>{ setCheckout(null); setTab('promote'); }}
+    />
+  );
+
+  const FOOTER_CONTENT = {
+    privacy:{ title:'Privacy Policy', icon:'🔒', lastUpdated:'May 8, 2026', sections:[{heading:'Information We Collect',body:'When you create a ViewBoost account we collect your name, email address, and password (secured by Supabase Auth with bcrypt hashing). We store campaigns you create, tasks you complete, and your points balance in a Supabase Postgres database.'},{heading:'Data Storage',body:'All data is stored in Supabase (eu-west-1 region). Data is encrypted at rest and in transit using TLS 1.3. Your password is never stored in plain text.'},{heading:'YouTube Integration',body:'When you complete a "Watch + Subscribe" task, ViewBoost opens YouTube\'s official subscription page. We do not access your YouTube credentials.'},{heading:'Your Rights',body:'You may request account deletion at any time. Contact privacy@viewboost.io.'}]},
+    terms:{ title:'Terms & Conditions', icon:'📋', lastUpdated:'May 8, 2026', sections:[{heading:'Acceptance',body:'By creating a ViewBoost account you agree to these Terms. We reserve the right to update them with notice.'},{heading:'Prohibited Activities',body:'No bots, multiple accounts, false confirmations, or fraudulent activity. Violations result in account termination.'},{heading:'Points',body:'Points have no monetary value and cannot be exchanged for cash.'},{heading:'Contact',body:'legal@viewboost.io'}]},
+    about:{ title:'About ViewBoost', icon:'🚀', lastUpdated:null, sections:[{heading:'What is ViewBoost?',body:'ViewBoost is a community-powered view-for-view exchange platform for YouTube creators, built with React and Supabase.'},{heading:'Mission',body:'Building a level playing field for creators through genuine engagement — watch, subscribe, comment.'},{heading:'Technology',body:'React frontend, Supabase Auth + Postgres backend, Row Level Security for data privacy, real-time sync across devices.'},{heading:'Contact',body:'hello@viewboost.io'}]},
+  };
+  const fp = FOOTER_CONTENT[footerPage];
+
+  return (
+    <div style={{background:'#0f0f1a',minHeight:'100vh',color:'#fff',display:'flex',flexDirection:'column'}}>
+      <Header user={user} onLogout={()=>supa.auth.signOut()}/>
+      <div style={{maxWidth:960,margin:'0 auto',padding:'0 20px 0',width:'100%',flex:1}}>
+        <TabBar activeTab={tab} setActiveTab={t=>{setTab(t);if(t!=='earn')setTask(null);}}/>
+        <div style={{marginTop:22,paddingBottom:16}}>
+          {tab==='discover'  && <DiscoverTab user={user} campaigns={camps} setActiveTab={setTab} setActiveTask={setActiveTask} onCheckout={setCheckout}/>}
+          {tab==='earn'      && <EarnTab user={user} campaigns={camps} onClaim={handleClaim} activeTask={task} setActiveTask={setActiveTask}/>}
+          {tab==='promote'   && <PromoteTab user={user} campaigns={camps} onLaunch={handleLaunch}/>}
+          {tab==='dashboard' && <DashboardTab user={user} campaigns={camps}/>}
+        </div>
+      </div>
+      <Footer onOpenPage={setFooterPage}/>
+      {fp&&(
+        <div className="fade-in" style={{position:'fixed',inset:0,background:'rgba(0,0,0,.75)',zIndex:2000,overflowY:'auto',padding:'24px 16px'}} onClick={e=>{if(e.target===e.currentTarget)setFooterPage(null);}}>
+          <div className="fade-up" style={{maxWidth:680,margin:'0 auto',background:'#13132a',border:'1px solid rgba(255,255,255,.08)',borderRadius:18,overflow:'hidden'}}>
+            <div style={{background:'linear-gradient(135deg,#1e1140,#13132a)',padding:'24px 28px',borderBottom:'1px solid rgba(255,255,255,.06)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+              <div style={{display:'flex',alignItems:'center',gap:12}}><span style={{fontSize:28}}>{fp.icon}</span><div><h2 style={{fontSize:20,fontWeight:800,color:'#fff'}}>{fp.title}</h2>{fp.lastUpdated&&<div style={{fontSize:11,color:'#4b5563',marginTop:2}}>Last updated: {fp.lastUpdated}</div>}</div></div>
+              <button onClick={()=>setFooterPage(null)} style={{background:'rgba(255,255,255,.06)',border:'1px solid rgba(255,255,255,.1)',borderRadius:8,width:32,height:32,color:'#94a3b8',cursor:'pointer',fontSize:16,display:'flex',alignItems:'center',justifyContent:'center'}}>✕</button>
+            </div>
+            <div style={{padding:'28px',display:'flex',flexDirection:'column',gap:22}}>
+              {fp.sections.map((s,i)=><div key={i}><h3 style={{fontSize:14,fontWeight:700,color:'#a855f7',marginBottom:7,display:'flex',alignItems:'center',gap:7}}><span style={{display:'inline-block',width:4,height:14,background:'#a855f7',borderRadius:2}}/>{s.heading}</h3><p style={{fontSize:13,color:'#94a3b8',lineHeight:1.7}}>{s.body}</p></div>)}
+            </div>
+            <div style={{padding:'16px 28px',borderTop:'1px solid rgba(255,255,255,.06)',display:'flex',justifyContent:'flex-end'}}><button onClick={()=>setFooterPage(null)} style={{padding:'9px 24px',borderRadius:9,border:'none',background:'linear-gradient(135deg,#a855f7,#7c3aed)',color:'#fff',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}>Close</button></div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
 </body>
 </html>
