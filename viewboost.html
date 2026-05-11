@@ -38,11 +38,71 @@
 const { useState, useEffect, useRef } = React;
 
 // ── Supabase Client ───────────────────────────────────────────────────────────
+const SUPA_URL = 'https://rqinoynbezufokewlwny.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJxaW5veW5iZXp1Zm9rZXdsd255Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgyMTA0OTksImV4cCI6MjA5Mzc4NjQ5OX0.QFz8ZWa5OB0KIWLDFtZYv8t3aJLRDFPlXkOcEIdidLQ';
 const { createClient } = window.supabase;
-const supa = createClient(
-  'https://rqinoynbezufokewlwny.supabase.co',
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJxaW5veW5iZXp1Zm9rZXdsd255Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgyMTA0OTksImV4cCI6MjA5Mzc4NjQ5OX0.QFz8ZWa5OB0KIWLDFtZYv8t3aJLRDFPlXkOcEIdidLQ'
-);
+const supa = createClient(SUPA_URL, SUPA_KEY);
+
+// ── Direct-fetch auth helpers (bypasses JS client which hangs) ────────────────
+const AUTH_HEADERS = { 'Content-Type': 'application/json', 'apikey': SUPA_KEY };
+
+async function authSignIn(email, password) {
+  const r = await fetch(`${SUPA_URL}/auth/v1/token?grant_type=password`, {
+    method: 'POST', headers: AUTH_HEADERS,
+    body: JSON.stringify({ email, password }),
+  });
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error_description || d.message || 'Invalid email or password');
+  // Inject session into JS client so DB queries work
+  await supa.auth.setSession({ access_token: d.access_token, refresh_token: d.refresh_token });
+  return d.user;
+}
+
+async function authSignUp(email, password, name) {
+  const r = await fetch(`${SUPA_URL}/auth/v1/signup`, {
+    method: 'POST', headers: AUTH_HEADERS,
+    body: JSON.stringify({ email, password, data: { name } }),
+  });
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error_description || d.msg || d.message || 'Signup failed');
+  if (d.session) {
+    await supa.auth.setSession({ access_token: d.session.access_token, refresh_token: d.session.refresh_token });
+  }
+  return d;
+}
+
+async function authGetSession() {
+  // Read stored session from localStorage directly — no network call needed
+  const stored = localStorage.getItem(`sb-rqinoynbezufokewlwny-auth-token`);
+  if (!stored) return null;
+  try {
+    const s = JSON.parse(stored);
+    const tok = s?.access_token || s?.currentSession?.access_token;
+    const ref = s?.refresh_token || s?.currentSession?.refresh_token;
+    if (!tok || !ref) return null;
+    // Check if expired — if so, refresh
+    const exp = s?.expires_at || s?.currentSession?.expires_at || 0;
+    if (exp && exp < Math.floor(Date.now()/1000) + 60) {
+      const r = await fetch(`${SUPA_URL}/auth/v1/token?grant_type=refresh_token`, {
+        method: 'POST', headers: AUTH_HEADERS,
+        body: JSON.stringify({ refresh_token: ref }),
+      });
+      if (!r.ok) { localStorage.removeItem(`sb-rqinoynbezufokewlwny-auth-token`); return null; }
+      const d = await r.json();
+      await supa.auth.setSession({ access_token: d.access_token, refresh_token: d.refresh_token });
+      return d.user;
+    }
+    await supa.auth.setSession({ access_token: tok, refresh_token: ref });
+    // Decode user from JWT
+    const payload = JSON.parse(atob(tok.split('.')[1]));
+    return { id: payload.sub, email: payload.email, user_metadata: payload.user_metadata || {} };
+  } catch(e) { return null; }
+}
+
+async function authSignOut() {
+  localStorage.removeItem(`sb-rqinoynbezufokewlwny-auth-token`);
+  await supa.auth.signOut().catch(()=>{});
+}
 
 // ── DB helpers ────────────────────────────────────────────────────────────────
 // Map Supabase campaign row → app shape
@@ -152,39 +212,23 @@ function LoginScreen({ onLogin }) {
     setLoading(true);
     try {
       if (mode === 'login') {
-        const { data, error } = await supa.auth.signInWithPassword({ email, password: pass });
-        if (error) throw error;
-        // Fetch profile but don't block — fall back to defaults if slow/missing
-        const profile = await Promise.race([
-          fetchProfile(data.user.id),
-          new Promise(r => setTimeout(() => r(null), 3000)),
-        ]).catch(() => null);
-        onLogin({ id: data.user.id, email: data.user.email, ...(profile || DEFAULT_PROFILE(null, email)) });
+        const user = await authSignIn(email, pass);
+        const profile = await fetchProfile(user.id).catch(() => null);
+        onLogin({ id: user.id, email: user.email, ...(profile || DEFAULT_PROFILE(null, email)) });
 
       } else {
-        const { data, error } = await supa.auth.signUp({
-          email, password: pass, options: { data: { name: name.trim() } }
-        });
-        if (error) throw error;
-
-        // If no session — Supabase requires email confirmation
-        if (!data.session) {
-          setConfirm(true);
-          return; // setLoading(false) runs in finally
-        }
-
-        // Give DB trigger 1s to create profile, then fetch with fallback
+        const result = await authSignUp(email, pass, name.trim());
+        // No session = email confirmation required
+        if (!result.session) { setConfirm(true); return; }
+        // Give DB trigger 1s to create profile, then load it
         await new Promise(r => setTimeout(r, 1000));
-        const profile = await Promise.race([
-          fetchProfile(data.user.id),
-          new Promise(r => setTimeout(() => r(null), 3000)),
-        ]).catch(() => null);
-        onLogin({ id: data.user.id, email: data.user.email, ...(profile || DEFAULT_PROFILE(name.trim(), email)) });
+        const profile = await fetchProfile(result.user.id).catch(() => null);
+        onLogin({ id: result.user.id, email: result.user.email, ...(profile || DEFAULT_PROFILE(name.trim(), email)) });
       }
     } catch (e) {
       setErr(e.message || 'Something went wrong. Please try again.');
     } finally {
-      setLoading(false); // ALWAYS runs — success, error, or timeout
+      setLoading(false); // ALWAYS runs no matter what
     }
   }
 
@@ -964,45 +1008,25 @@ function App() {
   useEffect(()=>{
     let mounted=true;
 
-    // Hard timeout — never spin for more than 6 seconds
-    const timeout = setTimeout(()=>{ if(mounted) setInitLoading(false); }, 6000);
-
     async function init() {
       try {
-        // Load campaigns in background (non-blocking)
         fetchCampaigns().then(data=>{ if(mounted) setCamps(data); }).catch(()=>{});
-
-        // Check existing session with a 5s race timeout
-        const sessionResult = await Promise.race([
-          supa.auth.getSession(),
-          new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),5000)),
-        ]);
-        const session = sessionResult?.data?.session;
-        if(session && mounted){
-          const profile = await fetchProfile(session.user.id);
-          if(mounted) setUser({ id:session.user.id, email:session.user.email, ...(profile||{name:'',points:2000,tasks_completed:0,total_earned:0,created_at:new Date().toISOString()}) });
+        // Use direct localStorage read — no network call, instant
+        const authUser = await authGetSession();
+        if(authUser && mounted){
+          const profile = await fetchProfile(authUser.id).catch(()=>null);
+          const def = { name: authUser.user_metadata?.name || authUser.email?.split('@')[0] || '', points:2000, tasks_completed:0, total_earned:0, created_at:new Date().toISOString() };
+          if(mounted) setUser({ id:authUser.id, email:authUser.email, ...(profile||def) });
         }
       } catch(e) {
-        console.warn('Supabase init:', e.message);
-        // Still show the app — user can log in manually
+        console.warn('Init error:', e.message);
       } finally {
-        clearTimeout(timeout);
         if(mounted) setInitLoading(false);
       }
     }
     init();
 
-    // Listen for auth changes
-    const { data:{ subscription } } = supa.auth.onAuthStateChange(async(event, session)=>{
-      if(!mounted) return;
-      if(event==='SIGNED_OUT'){ setUser(null); setTab('discover'); setTask(null); }
-      if(event==='SIGNED_IN' && session){
-        const profile = await fetchProfile(session.user.id);
-        if(mounted) setUser({ id:session.user.id, email:session.user.email, ...(profile||{name:'',points:2000,tasks_completed:0,total_earned:0,created_at:new Date().toISOString()}) });
-      }
-    });
-
-    return ()=>{ mounted=false; subscription.unsubscribe(); };
+    return ()=>{ mounted=false; };
   },[]);
 
   function setActiveTask(t){ setTask(t); if(t) setTab('earn'); }
@@ -1061,7 +1085,7 @@ function App() {
 
   return (
     <div style={{background:'#0f0f1a',minHeight:'100vh',color:'#fff',display:'flex',flexDirection:'column'}}>
-      <Header user={user} onLogout={()=>supa.auth.signOut()}/>
+      <Header user={user} onLogout={()=>{ authSignOut(); setUser(null); setTab('discover'); setTask(null); }}/>
       <div style={{maxWidth:960,margin:'0 auto',padding:'0 20px 0',width:'100%',flex:1}}>
         <TabBar activeTab={tab} setActiveTab={t=>{setTab(t);if(t!=='earn')setTask(null);}}/>
         <div style={{marginTop:22,paddingBottom:16}}>
