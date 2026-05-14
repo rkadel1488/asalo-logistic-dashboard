@@ -163,6 +163,40 @@ async function postCommentToYouTube(videoId, commentText) {
   return data;
 }
 
+// ── Change Password ───────────────────────────────────────────────────────────
+async function changePasswordAPI(newPassword) {
+  const stored = localStorage.getItem(`sb-rqinoynbezufokewlwny-auth-token`);
+  const s = stored ? JSON.parse(stored) : null;
+  const token = s?.access_token || s?.currentSession?.access_token;
+  if (!token) throw new Error('Not logged in. Please sign in again.');
+  const r = await fetch(`${SUPA_URL}/auth/v1/user`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'apikey': SUPA_KEY, 'Authorization': `Bearer ${token}` },
+    body: JSON.stringify({ password: newPassword }),
+  });
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.message || d.msg || 'Failed to change password');
+  return d;
+}
+
+// ── Bonus helpers ─────────────────────────────────────────────────────────────
+const WEEKLY_PTS  = 350;   // 50 pts × 7 days
+const MONTHLY_PTS = 1500;  // 50 pts × 30 days
+
+function bonusStatus(user, type) {
+  const createdAt = new Date(user.created_at || Date.now());
+  const now       = new Date();
+  const daysSince = (now - createdAt) / (1000*60*60*24);
+  const claimedAt = user[`${type}_bonus_claimed_at`];
+  const daysSinceClaim = claimedAt ? (now - new Date(claimedAt)) / (1000*60*60*24) : Infinity;
+  const threshold = type === 'weekly' ? 7 : 30;
+  const eligible  = daysSince >= threshold && daysSinceClaim >= threshold;
+  const daysLeft  = claimedAt
+    ? Math.max(0, Math.ceil(threshold - daysSinceClaim))
+    : Math.max(0, Math.ceil(threshold - daysSince));
+  return { eligible, daysLeft, pts: type === 'weekly' ? WEEKLY_PTS : MONTHLY_PTS };
+}
+
 // ── DB helpers ────────────────────────────────────────────────────────────────
 // Map Supabase campaign row → app shape
 function mapCamp(c) {
@@ -1153,9 +1187,17 @@ function PromoteTab({ user, campaigns, onLaunch }) {
 }
 
 // ── Dashboard Tab ─────────────────────────────────────────────────────────────
-function DashboardTab({ user, campaigns }) {
+function DashboardTab({ user, setUser, campaigns, onClaimBonus }) {
   const [history,   setHistory]   = useState(null);
   const [purchases, setPurchases] = useState(null);
+  const [showPwModal, setShowPwModal] = useState(false);
+  const [newPw,     setNewPw]     = useState('');
+  const [confirmPw, setConfirmPw] = useState('');
+  const [pwErr,     setPwErr]     = useState('');
+  const [pwOk,      setPwOk]      = useState(false);
+  const [pwLoading, setPwLoading] = useState(false);
+  const [claimingBonus, setClaimingBonus] = useState('');
+
   const mine   = campaigns.filter(c=>c.ownerId===user.id);
   const active = mine.filter(c=>c.delivered<c.target).length;
 
@@ -1168,159 +1210,237 @@ function DashboardTab({ user, campaigns }) {
   const totalPurchased = (purchases||[]).reduce((s,p)=>s+p.pts,0);
   const totalSpent     = mine.reduce((s,c)=>s+(c.target*(TASK_DEFS[c.taskType]?.costPerView||5)),0);
   const icons={watch:'👁️',subscribe:'🔔',comment:'💬'};
-  const Loader = ()=><div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,padding:'28px 0',color:'#374151',fontSize:13}}><div className="spinner" style={{width:14,height:14}}/> Loading…</div>;
+  const Loader = ()=><div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,padding:'24px 0',color:'#374151',fontSize:13}}><div className="spinner" style={{width:14,height:14}}/> Loading…</div>;
+
+  const weeklyInfo  = bonusStatus(user,'weekly');
+  const monthlyInfo = bonusStatus(user,'monthly');
+
+  async function handleChangePw(e){
+    e.preventDefault(); setPwErr(''); setPwOk(false);
+    if(newPw.length<6){setPwErr('Password must be at least 6 characters.');return;}
+    if(newPw!==confirmPw){setPwErr('Passwords do not match.');return;}
+    setPwLoading(true);
+    try{
+      await changePasswordAPI(newPw);
+      setPwOk(true); setNewPw(''); setConfirmPw('');
+      setTimeout(()=>setShowPwModal(false),1500);
+    }catch(e){setPwErr(e.message);}
+    finally{setPwLoading(false);}
+  }
+
+  async function claimBonus(type){
+    if(claimingBonus) return;
+    setClaimingBonus(type);
+    try{ await onClaimBonus(type); }catch(e){ console.error(e); }
+    finally{ setClaimingBonus(''); }
+  }
 
   return (
     <div className="fade-up" style={{display:'flex',flexDirection:'column',gap:24}}>
 
-      {/* ── Profile Card ── */}
-      <div style={{background:'linear-gradient(135deg,#1a0f2e 0%,#0f1a1a 100%)',border:'1px solid rgba(168,85,247,.25)',borderRadius:18,padding:'28px 28px',position:'relative',overflow:'hidden'}}>
+      {/* Change Password Modal */}
+      {showPwModal&&(
+        <div className="fade-in" style={{position:'fixed',inset:0,background:'rgba(0,0,0,.75)',zIndex:2000,display:'flex',alignItems:'center',justifyContent:'center',padding:20}} onClick={e=>{if(e.target===e.currentTarget)setShowPwModal(false);}}>
+          <div className="fade-up" style={{background:'#1a1a2e',border:'1px solid rgba(168,85,247,.3)',borderRadius:18,padding:28,width:'100%',maxWidth:380}}>
+            <h3 style={{fontSize:18,fontWeight:800,color:'#fff',marginBottom:6}}>🔐 Change Password</h3>
+            <p style={{fontSize:12,color:'#64748b',marginBottom:20}}>Enter your new password below.</p>
+            <form onSubmit={handleChangePw} style={{display:'flex',flexDirection:'column',gap:12}}>
+              <input type="password" placeholder="New Password" value={newPw} onChange={e=>setNewPw(e.target.value)} required disabled={pwLoading}
+                style={{padding:'12px 14px',borderRadius:10,border:'1px solid rgba(255,255,255,.1)',background:'#0d0d1f',color:'#fff',fontSize:14,outline:'none',fontFamily:'inherit'}}/>
+              <input type="password" placeholder="Confirm Password" value={confirmPw} onChange={e=>setConfirmPw(e.target.value)} required disabled={pwLoading}
+                style={{padding:'12px 14px',borderRadius:10,border:'1px solid rgba(255,255,255,.1)',background:'#0d0d1f',color:'#fff',fontSize:14,outline:'none',fontFamily:'inherit'}}/>
+              {pwErr&&<div style={{color:'#f87171',fontSize:12,padding:'7px 10px',background:'rgba(248,113,113,.08)',borderRadius:7}}>⚠ {pwErr}</div>}
+              {pwOk&&<div style={{color:'#4ade80',fontSize:12,padding:'7px 10px',background:'rgba(22,163,74,.1)',borderRadius:7}}>✓ Password changed successfully!</div>}
+              <div style={{display:'flex',gap:10,marginTop:4}}>
+                <button type="button" onClick={()=>setShowPwModal(false)} style={{flex:1,padding:'11px',borderRadius:10,border:'1px solid rgba(255,255,255,.1)',background:'transparent',color:'#94a3b8',cursor:'pointer',fontFamily:'inherit',fontWeight:600}}>Cancel</button>
+                <button type="submit" disabled={pwLoading} style={{flex:2,padding:'11px',borderRadius:10,border:'none',background:'linear-gradient(135deg,#a855f7,#7c3aed)',color:'#fff',fontWeight:700,cursor:pwLoading?'wait':'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:7}}>
+                  {pwLoading&&<div className="spinner" style={{width:13,height:13}}/>}{pwLoading?'Saving…':'Update Password'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Profile Card */}
+      <div style={{background:'linear-gradient(135deg,#1a0f2e 0%,#0f1a1a 100%)',border:'1px solid rgba(168,85,247,.25)',borderRadius:18,padding:'24px 28px',position:'relative',overflow:'hidden'}}>
         <div style={{position:'absolute',top:-40,right:-40,width:160,height:160,background:'radial-gradient(circle,rgba(168,85,247,.12),transparent 70%)',pointerEvents:'none'}}/>
         <div style={{display:'flex',alignItems:'flex-start',gap:20,flexWrap:'wrap'}}>
-          {/* Avatar */}
-          <div style={{width:76,height:76,borderRadius:999,background:'linear-gradient(135deg,#a855f7,#22d3ee)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:26,fontWeight:800,color:'#fff',flexShrink:0,boxShadow:'0 0 24px rgba(168,85,247,.4)'}}>{initials(user.name)}</div>
-          {/* Info */}
+          <div style={{width:72,height:72,borderRadius:999,background:'linear-gradient(135deg,#a855f7,#22d3ee)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,fontWeight:800,color:'#fff',flexShrink:0,boxShadow:'0 0 24px rgba(168,85,247,.4)'}}>{initials(user.name)}</div>
           <div style={{flex:1,minWidth:200}}>
             <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:4,flexWrap:'wrap'}}>
-              <h2 style={{fontSize:22,fontWeight:800,color:'#fff'}}>{user.name||'ViewBoost User'}</h2>
+              <h2 style={{fontSize:20,fontWeight:800,color:'#fff'}}>{user.name||'ViewBoost User'}</h2>
               <span style={{background:'rgba(74,222,128,.12)',color:'#4ade80',border:'1px solid rgba(74,222,128,.25)',borderRadius:999,padding:'2px 10px',fontSize:11,fontWeight:700}}>✓ Verified</span>
             </div>
-            <div style={{fontSize:13,color:'#64748b',marginBottom:6}}>{user.email}</div>
-            <div style={{display:'flex',gap:16,flexWrap:'wrap'}}>
-              <span style={{fontSize:12,color:'#4b5563',display:'flex',alignItems:'center',gap:5}}><Clock s={11} c="#4b5563"/> Member since {fmtDate(user.created_at||Date.now())}</span>
-              <span style={{fontSize:12,color:'#3ecf8e',display:'flex',alignItems:'center',gap:5}}>⚡ Powered by Supabase</span>
+            <div style={{fontSize:13,color:'#64748b',marginBottom:10}}>{user.email}</div>
+            <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'center'}}>
+              <button onClick={()=>setShowPwModal(true)} style={{display:'flex',alignItems:'center',gap:6,padding:'6px 14px',borderRadius:8,border:'1px solid rgba(168,85,247,.3)',background:'rgba(168,85,247,.08)',color:'#a855f7',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}
+                onMouseEnter={e=>e.currentTarget.style.background='rgba(168,85,247,.18)'} onMouseLeave={e=>e.currentTarget.style.background='rgba(168,85,247,.08)'}>
+                🔐 Change Password
+              </button>
+              <span style={{fontSize:12,color:'#4b5563',display:'flex',alignItems:'center',gap:4}}><Clock s={11} c="#4b5563"/> Member since {fmtDate(user.created_at||Date.now())}</span>
             </div>
           </div>
-          {/* Balance */}
-          <div style={{background:'rgba(255,255,255,.04)',border:'1px solid rgba(245,158,11,.2)',borderRadius:14,padding:'14px 20px',textAlign:'center',flexShrink:0}}>
-            <div style={{fontSize:11,color:'#64748b',marginBottom:4,textTransform:'uppercase',letterSpacing:'0.05em'}}>Current Balance</div>
-            <div style={{fontSize:32,fontWeight:800,color:'#f59e0b',display:'flex',alignItems:'center',gap:8,justifyContent:'center'}}><Coins s={22} c="#f59e0b"/>{(user.points||0).toLocaleString()}</div>
-            <div style={{fontSize:11,color:'#64748b',marginTop:4}}>points</div>
+          <div style={{background:'rgba(255,255,255,.04)',border:'1px solid rgba(245,158,11,.2)',borderRadius:14,padding:'12px 18px',textAlign:'center',flexShrink:0}}>
+            <div style={{fontSize:11,color:'#64748b',marginBottom:4,textTransform:'uppercase',letterSpacing:'0.05em'}}>Balance</div>
+            <div style={{fontSize:28,fontWeight:800,color:'#f59e0b',display:'flex',alignItems:'center',gap:6,justifyContent:'center'}}><Coins s={20} c="#f59e0b"/>{(user.points||0).toLocaleString()}</div>
+            <div style={{fontSize:10,color:'#64748b',marginTop:2}}>points</div>
           </div>
         </div>
       </div>
 
-      {/* ── Points Summary ── */}
+      {/* Points Summary */}
       <div>
         <h3 style={{fontSize:14,fontWeight:700,color:'#fff',marginBottom:12,display:'flex',alignItems:'center',gap:7}}><Coins s={14} c="#f59e0b"/> Points Details</h3>
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))',gap:10}}>
           {[
             {icon:'💰',label:'Current Balance',val:(user.points||0).toLocaleString(),col:'#f59e0b',sub:'available to spend'},
-            {icon:'📈',label:'Total Earned',   val:`+${totalEarned.toLocaleString()}`,col:'#4ade80',sub:'from completed tasks'},
-            {icon:'🛒',label:'Total Purchased', val:`+${totalPurchased.toLocaleString()}`,col:'#22d3ee',sub:'from point packages'},
+            {icon:'📈',label:'Total Earned',   val:`+${totalEarned.toLocaleString()}`,col:'#4ade80',sub:'from tasks'},
+            {icon:'🛒',label:'Total Purchased', val:`+${totalPurchased.toLocaleString()}`,col:'#22d3ee',sub:'point packages'},
             {icon:'📤',label:'Spent on Campaigns',val:`-${totalSpent.toLocaleString()}`,col:'#f87171',sub:'campaigns launched'},
           ].map(s=>(
-            <div key={s.label} style={{background:'#1a1a2e',border:`1px solid ${s.col}20`,borderRadius:12,padding:'16px 14px'}}>
-              <div style={{fontSize:22,marginBottom:8}}>{s.icon}</div>
-              <div style={{fontSize:20,fontWeight:800,color:s.col,marginBottom:2}}>{s.val} <span style={{fontSize:11,color:'#64748b'}}>pts</span></div>
+            <div key={s.label} style={{background:'#1a1a2e',border:`1px solid ${s.col}20`,borderRadius:12,padding:'14px'}}>
+              <div style={{fontSize:20,marginBottom:6}}>{s.icon}</div>
+              <div style={{fontSize:18,fontWeight:800,color:s.col,marginBottom:2}}>{s.val} <span style={{fontSize:10,color:'#64748b'}}>pts</span></div>
               <div style={{fontSize:11,color:'#64748b',fontWeight:600}}>{s.label}</div>
-              <div style={{fontSize:10,color:'#374151',marginTop:2}}>{s.sub}</div>
             </div>
           ))}
         </div>
       </div>
 
-      {/* ── Activity Stats ── */}
+      {/* Activity Stats */}
       <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
-        {[['✅','Tasks Done',(history||[]).length,'#4ade80'],['🚀','Active Campaigns',active,'#a855f7'],['📅','Total Campaigns',mine.length,'#22d3ee'],['🎯','Completion Rate',mine.length?`${Math.round(mine.filter(c=>c.delivered>=c.target).length/mine.length*100)}%`:'—','#f59e0b']].map(([ic,lb,val,col])=>(
+        {[['✅','Tasks Done',(history||[]).length,'#4ade80'],['🚀','Active Campaigns',active,'#a855f7'],['📅','Total Campaigns',mine.length,'#22d3ee'],['🎯','Completion %',mine.length?`${Math.round(mine.filter(c=>c.delivered>=c.target).length/mine.length*100)}%`:'—','#f59e0b']].map(([ic,lb,val,col])=>(
           <div key={lb} style={{flex:1,minWidth:120,background:'#1a1a2e',border:`1px solid ${col}20`,borderRadius:12,padding:'14px',textAlign:'center'}}>
-            <div style={{fontSize:22,marginBottom:5}}>{ic}</div>
-            <div style={{fontSize:20,fontWeight:800,color:col}}>{val}</div>
+            <div style={{fontSize:20,marginBottom:4}}>{ic}</div>
+            <div style={{fontSize:18,fontWeight:800,color:col}}>{val}</div>
             <div style={{fontSize:11,color:'#64748b',marginTop:2}}>{lb}</div>
           </div>
         ))}
       </div>
 
-      {/* ── Bonus Rewards — Coming Soon ── */}
+      {/* Bonus Rewards */}
       <div>
-        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
-          <h3 style={{fontSize:14,fontWeight:700,color:'#fff',display:'flex',alignItems:'center',gap:7}}>
-            🎁 Bonus Rewards
-          </h3>
-          <span style={{background:'linear-gradient(135deg,#a855f7,#7c3aed)',color:'#fff',fontSize:10,fontWeight:800,padding:'3px 12px',borderRadius:999,boxShadow:'0 0 12px rgba(168,85,247,.4)'}}>Coming Soon</span>
-        </div>
-        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(190px,1fr))',gap:10}}>
-          {[
-            {icon:'📅',name:'Monthly Bonus',desc:'Earn bonus points every month just for being active',color:'#a855f7'},
-            {icon:'📆',name:'Weekly Bonus',desc:'Log in each week to collect your weekly reward',color:'#22d3ee'},
-            {icon:'👑',name:'VIP Bonus',desc:'Exclusive rewards unlocked as you level up your status',color:'#f59e0b'},
-            {icon:'🎂',name:'Birthday Bonus',desc:'A special gift of points on your birthday every year',color:'#f87171'},
-          ].map(b=>(
-            <div key={b.name} style={{background:'#1a1a2e',border:`1px solid ${b.color}20`,borderRadius:13,padding:'16px',position:'relative',overflow:'hidden'}}>
-              <div style={{position:'absolute',top:0,right:0,background:`${b.color}15`,width:60,height:60,borderRadius:'0 13px 0 60px'}}/>
-              <div style={{fontSize:26,marginBottom:8}}>{b.icon}</div>
-              <div style={{fontWeight:700,fontSize:13,color:'#fff',marginBottom:4}}>{b.name}</div>
-              <div style={{fontSize:11,color:'#64748b',lineHeight:1.5,marginBottom:10}}>{b.desc}</div>
-              <div style={{display:'inline-flex',alignItems:'center',gap:5,background:`${b.color}12`,border:`1px solid ${b.color}30`,borderRadius:999,padding:'3px 10px',fontSize:10,fontWeight:700,color:b.color}}>
-                🔒 Coming Soon
-              </div>
+        <h3 style={{fontSize:14,fontWeight:700,color:'#fff',marginBottom:12,display:'flex',alignItems:'center',gap:7}}>🎁 Bonus Rewards</h3>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))',gap:12}}>
+
+          {/* Weekly Bonus */}
+          {(()=>{ const {eligible,daysLeft,pts}=weeklyInfo; return (
+            <div style={{background:'#1a1a2e',border:`1px solid ${eligible?'rgba(34,211,238,.4)':'rgba(34,211,238,.15)'}`,borderRadius:14,padding:'18px',position:'relative',boxShadow:eligible?'0 0 20px rgba(34,211,238,.1)':'none',transition:'all .2s'}}>
+              {eligible&&<div style={{position:'absolute',top:-10,left:16,background:'linear-gradient(135deg,#22d3ee,#0891b2)',color:'#fff',fontSize:10,fontWeight:800,padding:'2px 12px',borderRadius:999}}>Ready to Claim!</div>}
+              <div style={{fontSize:26,marginBottom:8}}>📆</div>
+              <div style={{fontWeight:700,fontSize:14,color:'#fff',marginBottom:3}}>Weekly Bonus</div>
+              <div style={{fontSize:11,color:'#64748b',marginBottom:10}}>50 pts × 7 days = <strong style={{color:'#22d3ee'}}>{pts.toLocaleString()} pts</strong></div>
+              {eligible
+                ? <button onClick={()=>claimBonus('weekly')} disabled={!!claimingBonus} style={{width:'100%',padding:'9px',borderRadius:9,border:'none',background:'linear-gradient(135deg,#22d3ee,#0891b2)',color:'#fff',fontWeight:700,fontSize:13,cursor:claimingBonus?'wait':'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>
+                    {claimingBonus==='weekly'&&<div className="spinner" style={{width:12,height:12}}/>} {claimingBonus==='weekly'?'Claiming…':'Claim 350 pts'}
+                  </button>
+                : <div style={{fontSize:12,color:'#64748b',display:'flex',alignItems:'center',gap:5}}><Clock s={11} c="#64748b"/> {daysLeft} day{daysLeft!==1?'s':''} to unlock</div>}
             </div>
-          ))}
+          );})()}
+
+          {/* Monthly Bonus */}
+          {(()=>{ const {eligible,daysLeft,pts}=monthlyInfo; return (
+            <div style={{background:'#1a1a2e',border:`1px solid ${eligible?'rgba(168,85,247,.4)':'rgba(168,85,247,.15)'}`,borderRadius:14,padding:'18px',position:'relative',boxShadow:eligible?'0 0 20px rgba(168,85,247,.1)':'none',transition:'all .2s'}}>
+              {eligible&&<div style={{position:'absolute',top:-10,left:16,background:'linear-gradient(135deg,#a855f7,#7c3aed)',color:'#fff',fontSize:10,fontWeight:800,padding:'2px 12px',borderRadius:999}}>Ready to Claim!</div>}
+              <div style={{fontSize:26,marginBottom:8}}>📅</div>
+              <div style={{fontWeight:700,fontSize:14,color:'#fff',marginBottom:3}}>Monthly Bonus</div>
+              <div style={{fontSize:11,color:'#64748b',marginBottom:10}}>50 pts × 30 days = <strong style={{color:'#a855f7'}}>{pts.toLocaleString()} pts</strong></div>
+              {eligible
+                ? <button onClick={()=>claimBonus('monthly')} disabled={!!claimingBonus} style={{width:'100%',padding:'9px',borderRadius:9,border:'none',background:'linear-gradient(135deg,#a855f7,#7c3aed)',color:'#fff',fontWeight:700,fontSize:13,cursor:claimingBonus?'wait':'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>
+                    {claimingBonus==='monthly'&&<div className="spinner" style={{width:12,height:12}}/>} {claimingBonus==='monthly'?'Claiming…':'Claim 1,500 pts'}
+                  </button>
+                : <div style={{fontSize:12,color:'#64748b',display:'flex',alignItems:'center',gap:5}}><Clock s={11} c="#64748b"/> {daysLeft} day{daysLeft!==1?'s':''} to unlock</div>}
+            </div>
+          );})()}
+
+          {/* VIP — Coming Soon */}
+          <div style={{background:'#1a1a2e',border:'1px solid rgba(245,158,11,.12)',borderRadius:14,padding:'18px',opacity:.65}}>
+            <div style={{fontSize:26,marginBottom:8}}>👑</div>
+            <div style={{fontWeight:700,fontSize:14,color:'#fff',marginBottom:3}}>VIP Bonus</div>
+            <div style={{fontSize:11,color:'#64748b',marginBottom:10}}>Exclusive rewards for top members</div>
+            <span style={{background:'rgba(245,158,11,.1)',border:'1px solid rgba(245,158,11,.2)',borderRadius:999,padding:'3px 10px',fontSize:10,fontWeight:700,color:'#f59e0b'}}>🔒 Coming Soon</span>
+          </div>
+
+          {/* Birthday — Coming Soon */}
+          <div style={{background:'#1a1a2e',border:'1px solid rgba(248,113,113,.12)',borderRadius:14,padding:'18px',opacity:.65}}>
+            <div style={{fontSize:26,marginBottom:8}}>🎂</div>
+            <div style={{fontWeight:700,fontSize:14,color:'#fff',marginBottom:3}}>Birthday Bonus</div>
+            <div style={{fontSize:11,color:'#64748b',marginBottom:10}}>Annual gift on your birthday</div>
+            <span style={{background:'rgba(248,113,113,.1)',border:'1px solid rgba(248,113,113,.2)',borderRadius:999,padding:'3px 10px',fontSize:10,fontWeight:700,color:'#f87171'}}>🔒 Coming Soon</span>
+          </div>
         </div>
-        <div style={{marginTop:10,padding:'10px 14px',background:'rgba(168,85,247,.05)',border:'1px solid rgba(168,85,247,.12)',borderRadius:10,fontSize:12,color:'#64748b',textAlign:'center'}}>
-          Point allocations for bonus rewards will be announced soon. Stay tuned! 🚀
+        <div style={{marginTop:10,padding:'9px 14px',background:'rgba(168,85,247,.05)',border:'1px solid rgba(168,85,247,.1)',borderRadius:9,fontSize:11,color:'#64748b',textAlign:'center'}}>
+          Weekly resets every 7 days · Monthly resets every 30 days · VIP &amp; Birthday bonuses coming soon 🚀
         </div>
       </div>
 
-      {/* ── Purchase History ── */}
+      {/* My Campaigns */}
+      <div>
+        <h3 style={{fontSize:14,fontWeight:700,color:'#fff',marginBottom:12,display:'flex',alignItems:'center',gap:7}}><BarChart s={14} c="#22d3ee"/> My Campaigns</h3>
+        {mine.length===0
+          ? <div style={{textAlign:'center',padding:'24px',background:'#1a1a2e',borderRadius:12,color:'#374151',fontSize:13}}>No campaigns yet. Go to Promote to launch one!</div>
+          : <div style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,.06)',borderRadius:14,overflow:'hidden'}}>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 110px 80px 70px',padding:'9px 16px',background:'rgba(255,255,255,.03)',borderBottom:'1px solid rgba(255,255,255,.06)',fontSize:11,fontWeight:700,color:'#4b5563',textTransform:'uppercase',letterSpacing:'0.05em'}}>
+                <span>Campaign</span><span style={{textAlign:'center'}}>Progress</span><span style={{textAlign:'center'}}>Views</span><span style={{textAlign:'right'}}>Type</span>
+              </div>
+              {mine.map((c,i)=>{
+                const pct=Math.min(Math.round((c.delivered/c.target)*100),100);
+                return (
+                  <div key={c.id} style={{display:'grid',gridTemplateColumns:'1fr 110px 80px 70px',padding:'11px 16px',borderBottom:i<mine.length-1?'1px solid rgba(255,255,255,.04)':'none',alignItems:'center'}}>
+                    <div><div style={{fontWeight:700,fontSize:13,color:'#fff',marginBottom:1}}>{c.title}</div><div style={{fontSize:10,color:'#4b5563'}}>{fmtDate(c.createdAt)}</div></div>
+                    <div style={{padding:'0 8px'}}>
+                      <div style={{height:5,background:'#0f0f1a',borderRadius:999,overflow:'hidden',marginBottom:2}}><div style={{height:'100%',width:`${pct}%`,background:'linear-gradient(90deg,#a855f7,#22d3ee)',borderRadius:999}}/></div>
+                      <div style={{fontSize:10,color:'#64748b',textAlign:'center'}}>{pct}%</div>
+                    </div>
+                    <div style={{textAlign:'center',fontSize:12,fontWeight:700,color:'#94a3b8'}}>{c.delivered}/{c.target}</div>
+                    <div style={{textAlign:'right'}}><TaskBadge taskType={c.taskType} sm/></div>
+                  </div>
+                );
+              })}
+            </div>}
+      </div>
+
+      {/* Purchase History */}
       <div>
         <h3 style={{fontSize:14,fontWeight:700,color:'#fff',marginBottom:12,display:'flex',alignItems:'center',gap:7}}><ShoppingB s={14} c="#22d3ee"/> Purchase History</h3>
         {purchases===null ? <Loader/> : purchases.length===0
-          ? <div style={{textAlign:'center',padding:'24px',background:'#1a1a2e',borderRadius:12,color:'#374151',fontSize:13}}>No purchases yet. Check the <strong style={{color:'#94a3b8'}}>Buy Points</strong> section when paid plans launch.</div>
+          ? <div style={{textAlign:'center',padding:'24px',background:'#1a1a2e',borderRadius:12,color:'#374151',fontSize:13}}>No purchases yet. Paid plans launching soon.</div>
           : <div style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,.06)',borderRadius:14,overflow:'hidden'}}>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 120px 120px 80px',padding:'10px 16px',background:'rgba(255,255,255,.03)',borderBottom:'1px solid rgba(255,255,255,.06)',fontSize:11,fontWeight:700,color:'#4b5563',textTransform:'uppercase',letterSpacing:'0.05em'}}>
-                <span>Package</span><span style={{textAlign:'center'}}>Points</span><span style={{textAlign:'right'}}>Amount</span><span style={{textAlign:'right'}}>Date</span>
-              </div>
               {purchases.map((p,i)=>(
-                <div key={p.id} style={{display:'grid',gridTemplateColumns:'1fr 120px 120px 80px',padding:'12px 16px',borderBottom:i<purchases.length-1?'1px solid rgba(255,255,255,.04)':'none',alignItems:'center'}}>
-                  <div style={{display:'flex',alignItems:'center',gap:10}}>
-                    <div style={{width:32,height:32,borderRadius:8,background:'linear-gradient(135deg,#a855f720,#22d3ee20)',border:'1px solid rgba(168,85,247,.2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14}}>🛒</div>
-                    <div><div style={{fontWeight:700,fontSize:13,color:'#fff'}}>{p.package_name} Pack</div><div style={{fontSize:11,color:'#64748b'}}>{fmtTime(p.purchased_at)}</div></div>
-                  </div>
-                  <div style={{textAlign:'center',fontWeight:700,fontSize:13,color:'#f59e0b',display:'flex',alignItems:'center',justifyContent:'center',gap:4}}><Coins s={11} c="#f59e0b"/>+{(p.pts||0).toLocaleString()}</div>
+                <div key={p.id} style={{display:'grid',gridTemplateColumns:'1fr 110px 70px 80px',padding:'11px 16px',borderBottom:i<purchases.length-1?'1px solid rgba(255,255,255,.04)':'none',alignItems:'center'}}>
+                  <div style={{fontWeight:600,fontSize:13,color:'#fff'}}>{p.package_name} Pack</div>
+                  <div style={{textAlign:'center',fontWeight:700,fontSize:13,color:'#f59e0b'}}>+{(p.pts||0).toLocaleString()} pts</div>
                   <div style={{textAlign:'right',fontWeight:700,fontSize:13,color:'#4ade80'}}>${Number(p.price||0).toFixed(2)}</div>
                   <div style={{textAlign:'right',fontSize:11,color:'#64748b'}}>{fmtDate(p.purchased_at)}</div>
                 </div>
               ))}
-              <div style={{padding:'10px 16px',background:'rgba(255,255,255,.02)',borderTop:'1px solid rgba(255,255,255,.06)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                <span style={{fontSize:12,color:'#64748b'}}>{purchases.length} purchase{purchases.length!==1?'s':''}</span>
-                <span style={{fontSize:13,fontWeight:800,color:'#f59e0b',display:'flex',alignItems:'center',gap:5}}><Coins s={13} c="#f59e0b"/>+{totalPurchased.toLocaleString()} pts total</span>
-              </div>
             </div>}
       </div>
 
-      {/* ── Earnings History ── */}
+      {/* Earnings History */}
       <div>
         <h3 style={{fontSize:14,fontWeight:700,color:'#fff',marginBottom:12,display:'flex',alignItems:'center',gap:7}}><Trophy s={14} c="#f59e0b"/> Earnings History</h3>
         {history===null ? <Loader/> : history.length===0
           ? <div style={{textAlign:'center',padding:'24px',background:'#1a1a2e',borderRadius:12,color:'#374151',fontSize:13}}>No earnings yet. Complete tasks to start earning!</div>
           : <div style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,.06)',borderRadius:14,overflow:'hidden'}}>
               {history.slice(0,15).map((h,i)=>(
-                <div key={h.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,padding:'12px 16px',borderBottom:i<Math.min(history.length,15)-1?'1px solid rgba(255,255,255,.04)':'none'}}>
+                <div key={h.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,padding:'11px 16px',borderBottom:i<Math.min(history.length,15)-1?'1px solid rgba(255,255,255,.04)':'none'}}>
                   <div style={{display:'flex',alignItems:'center',gap:10}}>
-                    <div style={{width:34,height:34,borderRadius:9,background:`${TASK_DEFS[h.task_type]?.accent||'#a855f7'}15`,border:`1px solid ${TASK_DEFS[h.task_type]?.accent||'#a855f7'}30`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:16}}>{icons[h.task_type]||'⚡'}</div>
-                    <div><div style={{fontSize:13,fontWeight:600,color:'#fff'}}>{h.campaign_title}</div><div style={{fontSize:11,color:'#64748b',marginTop:1}}>{TASK_DEFS[h.task_type]?.label} · {fmtDate(h.earned_at)} at {fmtTime(h.earned_at)}</div></div>
+                    <div style={{width:32,height:32,borderRadius:8,background:`${TASK_DEFS[h.task_type]?.accent||'#a855f7'}15`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:15}}>{icons[h.task_type]||'⚡'}</div>
+                    <div><div style={{fontSize:13,fontWeight:600,color:'#fff'}}>{h.campaign_title}</div><div style={{fontSize:11,color:'#64748b'}}>{TASK_DEFS[h.task_type]?.label} · {fmtDate(h.earned_at)}</div></div>
                   </div>
-                  <span style={{fontWeight:800,fontSize:14,color:'#4ade80',whiteSpace:'nowrap'}}>+{h.pts} pts</span>
+                  <span style={{fontWeight:800,fontSize:13,color:'#4ade80',whiteSpace:'nowrap'}}>+{h.pts} pts</span>
                 </div>
               ))}
-              {history.length>15&&<div style={{padding:'10px 16px',textAlign:'center',fontSize:12,color:'#4b5563',borderTop:'1px solid rgba(255,255,255,.04)'}}>{history.length-15} more earnings…</div>}
+              {history.length>15&&<div style={{padding:'9px',textAlign:'center',fontSize:11,color:'#4b5563'}}>{history.length-15} more earnings…</div>}
             </div>}
-      </div>
-
-      {/* ── Campaign History ── */}
-      <div>
-        <h3 style={{fontSize:14,fontWeight:700,color:'#fff',marginBottom:12,display:'flex',alignItems:'center',gap:7}}><BarChart s={14} c="#22d3ee"/> My Campaigns</h3>
-        {mine.length===0
-          ? <div style={{textAlign:'center',padding:'24px',background:'#1a1a2e',borderRadius:12,color:'#374151',fontSize:13}}>No campaigns yet. Go to Promote to launch one!</div>
-          : <div style={{display:'flex',flexDirection:'column',gap:8}}>{mine.map(c=>(
-              <div key={c.id}><CampaignCard campaign={c} compact/><div style={{fontSize:10,color:'#374151',marginTop:3,paddingLeft:4}}>Created {fmtDate(c.createdAt)}</div></div>
-            ))}</div>}
       </div>
 
     </div>
   );
 }
+
 
 // ── Footer ────────────────────────────────────────────────────────────────────
 function Footer({ onOpenPage }) {
@@ -1401,18 +1521,34 @@ function App() {
       tasks_completed: (u.tasks_completed||0)+1,
       total_earned: (u.total_earned||0)+pts,
     }));
-    // Atomic DB increment via RPC — safe even if client state was stale
-    supa.rpc('earn_points', { uid: user.id, amount: pts })
-      .then(({ data: newBalance }) => {
-        // Sync UI with DB's authoritative value
-        if(newBalance != null) setUser(u=>({...u, points: newBalance}));
-      })
-      .catch(()=>{});
-    // Log to earn_history in background
-    supa.from('earn_history').insert({
-      user_id:user.id, campaign_id:task.id,
-      campaign_title:task.title, task_type:task.taskType, pts,
-    }).catch(()=>{});
+    // Optimistically increment delivered count in local state
+    setCamps(prev=>prev.map(c=>
+      c.id===task.id ? {...c, delivered: (c.delivered||0)+1} : c
+    ));
+    // Atomic DB operations in parallel
+    Promise.all([
+      // Award points atomically
+      supa.rpc('earn_points', { uid: user.id, amount: pts })
+        .then(({ data: newBalance }) => {
+          if(newBalance != null) setUser(u=>({...u, points: newBalance}));
+        }),
+      // Increment campaign delivered count (SECURITY DEFINER bypasses owner-only RLS)
+      supa.rpc('increment_delivered', { camp_id: task.id }),
+      // Log earn history
+      supa.from('earn_history').insert({
+        user_id:user.id, campaign_id:task.id,
+        campaign_title:task.title, task_type:task.taskType, pts,
+      }),
+    ]).catch(()=>{});
+  }
+
+  // Claim bonus — type: 'weekly' | 'monthly'
+  async function handleClaimBonus(type) {
+    const rpcName = type === 'weekly' ? 'claim_weekly_bonus' : 'claim_monthly_bonus';
+    const { data: newBalance } = await supa.rpc(rpcName, { uid: user.id });
+    const pts = type === 'weekly' ? WEEKLY_PTS : MONTHLY_PTS;
+    const field = `${type}_bonus_claimed_at`;
+    setUser(u=>({ ...u, points: newBalance ?? (u.points||0)+pts, [field]: new Date().toISOString() }));
   }
 
   // Promote: atomic DB spend — never reads current balance
@@ -1471,7 +1607,7 @@ function App() {
           {tab==='discover'  && <DiscoverTab user={user} campaigns={camps} setActiveTab={setTab} setActiveTask={setActiveTask} onCheckout={setCheckout}/>}
           {tab==='earn'      && <EarnTab user={user} campaigns={camps} onClaim={handleClaim} activeTask={task} setActiveTask={setActiveTask}/>}
           {tab==='promote'   && <PromoteTab user={user} campaigns={camps} onLaunch={handleLaunch}/>}
-          {tab==='dashboard' && <DashboardTab user={user} campaigns={camps}/>}
+          {tab==='dashboard' && <DashboardTab user={user} setUser={setUser} campaigns={camps} onClaimBonus={handleClaimBonus}/>}
         </div>
       </div>
       <Footer onOpenPage={setFooterPage}/>
