@@ -931,7 +931,8 @@ function EarnTab({ user, campaigns, onClaim, activeTask, setActiveTask }) {
   const onCooldown     = avail.filter(c=> watchedToday?.has(c.id));
   const filtered       = filter==='all' ? available : available.filter(c=>c.taskType===filter);
   const filteredCooldown = filter==='all' ? onCooldown : onCooldown.filter(c=>c.taskType===filter);
-  const pLabels = PLATFORM_LABELS[platform] || PLATFORM_LABELS.youtube;
+  // pLabels: use activeTask platform when executing, otherwise use filter platform
+  const pLabels = PLATFORM_LABELS[activeTask?.platform || platform] || PLATFORM_LABELS.youtube;
 
   // Helper: ms until a campaign's 24h cooldown expires
   function cooldownLeft(campaignId) {
@@ -1105,7 +1106,6 @@ function EarnTab({ user, campaigns, onClaim, activeTask, setActiveTask }) {
   const isIG         = taskPlatform === 'instagram';
   const videoId      = isIG ? extractInstagramId(activeTask.url) : extractVideoId(activeTask.url);
   const igUser       = isIG ? extractInstagramUser(activeTask.channelUrl||activeTask.url) : null;
-  const pLabels      = PLATFORM_LABELS[taskPlatform] || PLATFORM_LABELS.youtube;
   return (
     <div className="fade-up" style={{display:'flex',flexDirection:'column',gap:16}}>
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
