@@ -2,8 +2,28 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
   <title>ViewBoost</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="/manifest.json"/>
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="ViewBoost"/>
+  <meta name="theme-color" content="#a855f7"/>
+  <meta name="description" content="Earn points by watching videos. Grow your YouTube channel."/>
+
+  <!-- Icons -->
+  <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png"/>
+  <link rel="apple-touch-icon" href="/icon-192.png"/>
+  <link rel="apple-touch-icon" sizes="512x512" href="/icon-512.png"/>
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="ViewBoost"/>
+  <meta property="og:description" content="Earn points watching videos. Grow your YouTube channel."/>
+  <meta property="og:image" content="/icon-512.png"/>
+  <meta property="og:type" content="website"/>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{background:#0f0f1a;font-family:system-ui,-apple-system,BlinkMacSystemFont,sans-serif}
@@ -2053,6 +2073,14 @@ function App() {
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+<!-- Service Worker registration -->
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}
 </script>
 </body>
 </html>

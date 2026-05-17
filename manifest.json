@@ -1,0 +1,43 @@
+{
+  "name": "ViewBoost",
+  "short_name": "ViewBoost",
+  "description": "Earn points by watching videos. Grow your YouTube channel.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f0f1a",
+  "theme_color": "#a855f7",
+  "categories": ["entertainment", "social"],
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "Earn Points",
+      "short_name": "Earn",
+      "description": "Watch videos and earn points",
+      "url": "/?tab=earn",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Promote Video",
+      "short_name": "Promote",
+      "description": "Promote your YouTube video",
+      "url": "/?tab=promote",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}
