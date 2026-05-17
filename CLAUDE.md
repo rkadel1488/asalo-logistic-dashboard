@@ -1,15 +1,21 @@
 # ASALO Logistic Dashboard — Claude Code Project
 
 ## Standing Instructions
-- **After every change:** always commit and push to BOTH GitHub remotes automatically:
+- **After every change — ALWAYS follow this exact sequence:**
   ```bash
+  # 1. Validate syntax FIRST — never skip this
+  python3 .claude/scripts/validate-html.py
+  # 2. Only proceed if validation passes ✅
+  cp viewboost.html index.html
   git add <changed files>
   git commit -m "..."
   git push viewboost HEAD:main
   git push origin HEAD:main
   ```
+- Validation catches duplicate declarations, unclosed templates, broken JSX
+- If validation fails → fix the error → re-validate → then push
+- Never push without a passing validation — it will break the live app
 - Also copy `viewboost.html` → `index.html` before pushing (Vercel serves index.html)
-- Never wait for the user to ask — push is part of every task
 
 ## What this is
 A fully interactive logistics operations dashboard for ASALO Logistic, built as a standalone browser app (React 18 + Babel, no build step). Originally designed in Claude Design, now maintained and extended through Claude Code.

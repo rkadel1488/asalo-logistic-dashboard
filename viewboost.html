@@ -255,12 +255,18 @@ function extractInstagramId(url='') {
   const m = url.match(/instagram\.com\/(?:p|reel|tv|reels)\/([A-Za-z0-9_-]+)/);
   return m ? m[1] : null;
 }
+function extractInstagramType(url='') {
+  return /instagram\.com\/reel/.test(url) ? 'reel' : 'p';
+}
 function extractInstagramUser(url='') {
   const m = url.match(/instagram\.com\/([A-Za-z0-9_.]+)\/?$/);
   return m ? m[1] : null;
 }
-function getInstagramEmbedUrl(postId) {
-  return `https://www.instagram.com/p/${postId}/embed/`;
+function getInstagramEmbedUrl(postId, sourceUrl='') {
+  // Use reel embed for reels, post embed otherwise
+  // &cr=1&v=14 enables auto-render; autoplay best-effort via allow attribute
+  const type = extractInstagramType(sourceUrl);
+  return 'https://www.instagram.com/' + type + '/' + postId + '/embed/?cr=1&v=14';
 }
 
 function mapCamp(c) {
