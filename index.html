@@ -40,10 +40,6 @@
     .pop-in{animation:popIn .4s cubic-bezier(.34,1.56,.64,1)}
     .pulse{animation:pulse 1.5s infinite}
     .spinner{width:22px;height:22px;border:3px solid rgba(255,255,255,.2);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;display:inline-block}
-    .checkout-input{width:100%;padding:13px 16px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:#0d0d1f;color:#fff;font-size:14px;outline:none;font-family:inherit;transition:border-color .2s,box-shadow .2s}
-    .checkout-input:focus{border-color:rgba(168,85,247,.6);box-shadow:0 0 0 3px rgba(168,85,247,.12)}
-    .checkout-input::placeholder{color:#374151}
-    .checkout-input:disabled{opacity:.5;cursor:not-allowed}
   </style>
   <!-- Supabase JS -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
@@ -591,239 +587,9 @@ function CampaignCard({ campaign, compact, actionLabel, onAction }) {
 }
 
 // ── Checkout Page ─────────────────────────────────────────────────────────────
-function CheckoutPage({ pkg, user, appConfig, onBack, onSuccess }) {
-  const [phase, setPhase] = useState('confirm'); // confirm | pending
-  const [submitting, setSubmitting] = useState(false);
-  const [txnRef, setTxnRef] = useState('');
-  const [refSaved, setRefSaved] = useState(false);
-  const formRef = useRef(null);
-
-  const esewa      = appConfig?.esewa || {};
-  const merchantId = esewa.merchant_code || 'EPAYTEST';
-  const liveMode   = esewa.live_mode    || false;
-  const nprPrice   = esewa.prices?.[pkg.id] || 0;
-  const esewaUrl   = liveMode
-    ? 'https://esewa.com.np/epay/main'
-    : 'https://uat.esewa.com.np/epay/main';
-
-  // Unique product ID for this transaction
-  const pid = `VB-${user.id.slice(-8)}-${pkg.id}-${Date.now()}`;
-  const returnBase = window.location.origin + window.location.pathname;
-  const successUrl = `${returnBase}?esewa=success&pkg=${pkg.id}&pid=${encodeURIComponent(pid)}`;
-  const failureUrl = `${returnBase}?esewa=failed&pkg=${pkg.id}`;
-
-  async function handlePayNow() {
-    setSubmitting(true);
-    // Save pending order BEFORE redirecting so we can match on return
-    await supa.from('payment_orders').insert({
-      user_id:      user.id,
-      package_id:   pkg.id,
-      package_name: pkg.name,
-      pts:          pkg.pts,
-      amount:       pkg.price,
-      status:       'pending',
-      payoneer_txn_id: pid, // reusing field for eSewa pid
-    }).catch(()=>{});
-    setSubmitting(false);
-    // Submit form to eSewa
-    formRef.current?.submit();
-  }
-
-  async function handleSaveRef(e) {
-    e.preventDefault();
-    if(!txnRef.trim()) return;
-    setSubmitting(true);
-    await supa.from('payment_orders')
-      .update({ payoneer_txn_id: txnRef.trim() })
-      .eq('user_id', user.id).eq('status','pending')
-      .order('created_at',{ascending:false}).limit(1)
-      .catch(()=>{});
-    setSubmitting(false);
-    setRefSaved(true);
-  }
-
-  // ── Confirm / Pay screen ──────────────────────────────────────────────────
-  if (phase === 'confirm') return (
-    <div className="fade-in" style={{minHeight:'100vh',background:'#0f0f1a',color:'#fff'}}>
-      {/* Header */}
-      <div style={{background:'#13132a',borderBottom:'1px solid rgba(255,255,255,.08)',padding:'0 24px'}}>
-        <div style={{maxWidth:780,margin:'0 auto',height:62,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-          <button onClick={onBack} style={{display:'flex',alignItems:'center',gap:7,background:'transparent',border:'none',color:'#94a3b8',cursor:'pointer',fontFamily:'inherit',fontSize:14,fontWeight:600}}
-            onMouseEnter={e=>e.currentTarget.style.color='#fff'} onMouseLeave={e=>e.currentTarget.style.color='#94a3b8'}>
-            <ArrowL s={16} c="currentColor"/> Back
-          </button>
-          <div style={{display:'flex',alignItems:'center',gap:10}}>
-            <div style={{width:28,height:28,borderRadius:7,background:'linear-gradient(135deg,#a855f7,#22d3ee)',display:'flex',alignItems:'center',justifyContent:'center'}}><Play s={13} c="#fff" fill="#fff"/></div>
-            <span style={{fontWeight:800,fontSize:17,color:'#fff'}}>View<span style={{color:'#a855f7'}}>Boost</span> / Checkout</span>
-          </div>
-          <div style={{fontSize:12,color:'#4ade80'}}>🔒 Powered by eSewa</div>
-        </div>
-      </div>
-
-      <div style={{maxWidth:780,margin:'0 auto',padding:'36px 20px',display:'grid',gridTemplateColumns:'1fr 300px',gap:28,alignItems:'start'}}>
-
-        {/* LEFT: eSewa payment */}
-        <div>
-          {/* eSewa brand */}
-          <div style={{display:'flex',alignItems:'center',gap:14,marginBottom:24}}>
-            <div style={{width:52,height:52,borderRadius:12,background:'linear-gradient(135deg,#6db33f,#4a7c1f)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:22,fontWeight:900,color:'#fff',letterSpacing:'-1px'}}>e</div>
-            <div>
-              <div style={{fontWeight:800,fontSize:20,color:'#fff'}}>Pay with eSewa</div>
-              <div style={{fontSize:12,color:'#64748b'}}>Nepal's most trusted digital payment</div>
-            </div>
-          </div>
-
-          {/* Amount display */}
-          <div style={{background:'linear-gradient(135deg,rgba(109,179,63,.12),rgba(74,124,31,.08))',border:'1px solid rgba(109,179,63,.3)',borderRadius:14,padding:'20px 22px',marginBottom:20}}>
-            <div style={{fontSize:12,color:'#94a3b8',marginBottom:4}}>Amount to pay</div>
-            <div style={{fontSize:38,fontWeight:800,color:'#6db33f'}}>NPR {nprPrice.toLocaleString()}</div>
-            <div style={{fontSize:12,color:'#64748b',marginTop:4}}>≈ ${pkg.price} USD · {pkg.pts.toLocaleString()} points</div>
-          </div>
-
-          {/* Steps */}
-          <div style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,.07)',borderRadius:12,padding:'18px 20px',marginBottom:20}}>
-            <div style={{fontWeight:700,fontSize:14,color:'#fff',marginBottom:14}}>How it works</div>
-            {[
-              {n:1,t:'Click "Pay with eSewa"',s:'You\'ll be redirected to eSewa\'s secure payment page'},
-              {n:2,t:`Pay NPR ${nprPrice.toLocaleString()}`,s:'Use your eSewa wallet, bank account, or debit card'},
-              {n:3,t:'Get your Transaction ID',s:'Shown on eSewa payment confirmation screen'},
-              {n:4,t:'Points credited within 24h',s:'After admin verifies your eSewa payment'},
-            ].map(s=>(
-              <div key={s.n} style={{display:'flex',gap:10,marginBottom:s.n<4?12:0}}>
-                <div style={{width:24,height:24,borderRadius:999,background:'#6db33f',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:800,color:'#fff',flexShrink:0}}>{s.n}</div>
-                <div>
-                  <div style={{fontWeight:600,fontSize:13,color:'#fff'}}>{s.t}</div>
-                  <div style={{fontSize:11,color:'#64748b',marginTop:1}}>{s.s}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {!liveMode && (
-            <div style={{background:'rgba(245,158,11,.08)',border:'1px solid rgba(245,158,11,.2)',borderRadius:8,padding:'8px 14px',fontSize:11,color:'#f59e0b',marginBottom:16}}>
-              ⚠ Currently in test mode. Use eSewa test ID: <strong>9806800001</strong> · Password: <strong>Nepal@123</strong> · MPIN: <strong>1122</strong>
-            </div>
-          )}
-
-          {nprPrice===0 && (
-            <div style={{background:'rgba(248,113,113,.08)',border:'1px solid rgba(248,113,113,.2)',borderRadius:8,padding:'8px 14px',fontSize:12,color:'#f87171',marginBottom:16}}>
-              eSewa prices not configured yet. Please contact admin.
-            </div>
-          )}
-
-          {/* Hidden eSewa payment form */}
-          <form ref={formRef} method="POST" action={esewaUrl} style={{display:'none'}}>
-            <input name="amt"   value={nprPrice} readOnly/>
-            <input name="psc"   value="0"        readOnly/>
-            <input name="pdc"   value="0"        readOnly/>
-            <input name="txAmt" value="0"        readOnly/>
-            <input name="tAmt"  value={nprPrice} readOnly/>
-            <input name="pid"   value={pid}      readOnly/>
-            <input name="scd"   value={merchantId} readOnly/>
-            <input name="su"    value={successUrl} readOnly/>
-            <input name="fu"    value={failureUrl} readOnly/>
-          </form>
-
-          {/* Pay button */}
-          <button onClick={handlePayNow} disabled={submitting||nprPrice===0} style={{width:'100%',padding:'16px',borderRadius:12,border:'none',background:nprPrice>0?'linear-gradient(135deg,#6db33f,#4a7c1f)':'#1f2937',color:'#fff',fontWeight:800,fontSize:17,cursor:nprPrice>0?'pointer':'not-allowed',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:10,boxShadow:nprPrice>0?'0 0 28px rgba(109,179,63,.4)':'none',transition:'all .2s'}}>
-            {submitting?<><div className="spinner" style={{width:16,height:16}}/> Preparing…</>:<>
-              <span style={{fontSize:22,fontWeight:900,letterSpacing:'-1px'}}>e</span> Pay NPR {nprPrice.toLocaleString()} with eSewa
-            </>}
-          </button>
-          <div style={{textAlign:'center',marginTop:10,fontSize:11,color:'#374151'}}>
-            Opens eSewa's secure payment page · Redirects back when complete
-          </div>
-        </div>
-
-        {/* RIGHT: Order summary */}
-        <div style={{position:'sticky',top:24}}>
-          <div style={{background:'#1a1a2e',border:`1px solid ${pkg.accent}30`,borderRadius:14,overflow:'hidden'}}>
-            <div style={{background:`linear-gradient(135deg,${pkg.accent}18,${pkg.accent}08)`,padding:'16px 18px',borderBottom:`1px solid ${pkg.accent}20`}}>
-              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:4}}>
-                <span style={{fontWeight:800,fontSize:16,color:'#fff'}}>{pkg.name} Pack</span>
-                {pkg.badge&&<span style={{background:pkg.accent,color:'#fff',fontSize:10,fontWeight:800,padding:'2px 8px',borderRadius:999}}>{pkg.badge}</span>}
-              </div>
-              <div style={{fontSize:12,color:'#64748b'}}>${pkg.price} USD · NPR {nprPrice.toLocaleString()}</div>
-            </div>
-            <div style={{padding:'14px 18px'}}>
-              <div style={{display:'flex',alignItems:'center',gap:8,background:'#0f0f1a',borderRadius:9,padding:'10px 12px',marginBottom:12}}>
-                <Coins s={18} c="#f59e0b"/>
-                <div><div style={{fontWeight:800,fontSize:17,color:'#f59e0b'}}>{pkg.pts.toLocaleString()}</div><div style={{fontSize:10,color:'#64748b'}}>points after verification</div></div>
-              </div>
-              {pkg.features.map(f=><div key={f} style={{display:'flex',alignItems:'center',gap:6,fontSize:11,color:'#94a3b8',marginBottom:5}}><Check s={11} c={pkg.accent}/>{f}</div>)}
-              <div style={{borderTop:'1px solid rgba(255,255,255,.06)',marginTop:12,paddingTop:12,display:'flex',justifyContent:'space-between'}}>
-                <span style={{fontSize:14,fontWeight:800,color:'#fff'}}>Total</span>
-                <div style={{textAlign:'right'}}>
-                  <div style={{fontSize:16,fontWeight:800,color:'#6db33f'}}>NPR {nprPrice.toLocaleString()}</div>
-                  <div style={{fontSize:10,color:'#4b5563'}}>${pkg.price} USD</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-
-  // ── Pending / TxnID entry screen ──────────────────────────────────────────
-  return (
-    <div className="fade-in" style={{minHeight:'100vh',background:'#0f0f1a',display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
-      <div style={{width:'100%',maxWidth:480,textAlign:'center'}}>
-        <div style={{fontSize:56,marginBottom:10}}>
-          {refSaved ? '✅' : '💳'}
-        </div>
-        <h2 style={{fontSize:24,fontWeight:800,color:'#fff',marginBottom:8}}>
-          {refSaved ? 'Transaction Submitted!' : 'Payment Page Opened'}
-        </h2>
-        <p style={{fontSize:14,color:'#94a3b8',marginBottom:24,lineHeight:1.6}}>
-          {refSaved
-            ? `Your order is under review. ${pkg.pts.toLocaleString()} points will be credited within 24 hours after verification.`
-            : 'Complete your payment on eSewa, then enter the Transaction ID from your eSewa confirmation.'}
-        </p>
-
-        <div style={{display:'inline-flex',alignItems:'center',gap:10,background:'#1a1a2e',border:'1px solid rgba(109,179,63,.3)',borderRadius:12,padding:'10px 18px',marginBottom:24}}>
-          <span style={{fontSize:20,fontWeight:900,color:'#6db33f',letterSpacing:'-1px'}}>e</span>
-          <div style={{textAlign:'left'}}>
-            <div style={{fontWeight:800,fontSize:15,color:'#f59e0b'}}>{pkg.pts.toLocaleString()} pts</div>
-            <div style={{fontSize:11,color:'#64748b'}}>{pkg.name} · NPR {nprPrice}</div>
-          </div>
-        </div>
-
-        {!refSaved && (
-          <div style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,.07)',borderRadius:12,padding:20,marginBottom:18,textAlign:'left'}}>
-            <div style={{fontWeight:700,fontSize:13,color:'#fff',marginBottom:3}}>Enter your eSewa Transaction ID</div>
-            <div style={{fontSize:11,color:'#64748b',marginBottom:12}}>Found on your eSewa payment confirmation screen or SMS</div>
-            <form onSubmit={handleSaveRef} style={{display:'flex',gap:8}}>
-              <input value={txnRef} onChange={e=>setTxnRef(e.target.value)} placeholder="e.g. RC8NXIJVFF"
-                style={{flex:1,padding:'10px 12px',borderRadius:8,border:'1px solid rgba(255,255,255,.1)',background:'#0d0d1f',color:'#fff',fontSize:13,outline:'none',fontFamily:'inherit'}}/>
-              <button type="submit" disabled={!txnRef.trim()||submitting} style={{padding:'10px 16px',borderRadius:8,border:'none',background:'linear-gradient(135deg,#6db33f,#4a7c1f)',color:'#fff',fontWeight:700,fontSize:13,cursor:txnRef.trim()?'pointer':'not-allowed',fontFamily:'inherit'}}>
-                Submit
-              </button>
-            </form>
-          </div>
-        )}
-
-        <div style={{display:'flex',gap:10,justifyContent:'center',flexWrap:'wrap'}}>
-          {refSaved
-            ? <button onClick={onSuccess} style={{padding:'12px 28px',borderRadius:11,border:'none',background:'linear-gradient(135deg,#a855f7,#7c3aed)',color:'#fff',fontWeight:700,fontSize:14,cursor:'pointer',fontFamily:'inherit'}}>Back to App 🚀</button>
-            : <>
-                <button onClick={()=>formRef.current?.submit()} style={{padding:'10px 18px',borderRadius:9,border:'1px solid rgba(109,179,63,.3)',background:'rgba(109,179,63,.08)',color:'#6db33f',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>
-                  Re-open eSewa Page
-                </button>
-                <button onClick={onBack} style={{padding:'10px 18px',borderRadius:9,border:'1px solid rgba(255,255,255,.1)',background:'transparent',color:'#94a3b8',fontWeight:600,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>
-                  ← Back to Plans
-                </button>
-              </>}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-
 
 // ── Discover Tab ──────────────────────────────────────────────────────────────
-function DiscoverTab({ user, campaigns, setActiveTab, setActiveTask, onCheckout }) {
+function DiscoverTab({ user, campaigns, setActiveTab, setActiveTask }) {
   const [leaderboard, setLeaderboard] = useState([]);
   const active = campaigns.filter(c=>c.delivered<c.target);
   const history = []; // public history not needed here
@@ -1710,7 +1476,6 @@ function AdminPanel({ user, appConfig, onConfigChange, onClose }) {
   const [activeTab, setActiveTab] = useState('overview');
   const [allUsers,    setAllUsers]    = useState(null);
   const [allCamps,    setAllCamps]    = useState(null);
-  const [allPayments, setAllPayments] = useState(null);
   const [saving,    setSaving]    = useState('');
   const [saved,     setSaved]     = useState('');
 
@@ -1723,17 +1488,12 @@ function AdminPanel({ user, appConfig, onConfigChange, onClose }) {
     bonus_monthly:  appConfig.bonus_monthly  || {enabled:true,pts:1500,interval_days:30},
     bonus_vip:      appConfig.bonus_vip      || {enabled:false,pts:500},
     bonus_birthday: appConfig.bonus_birthday || {enabled:false,pts:1000},
-    payoneer_links: appConfig.payoneer_links   || {starter:'',growth:'',pro:'',creator:'',email:''},
-    esewa:          appConfig.esewa           || {merchant_code:'EPAYTEST',live_mode:false,currency:'NPR',prices:{starter:135,growth:270,pro:815,creator:1360}},
   }));
 
   useEffect(()=>{
     if(activeTab==='users')     fetchLeaderboard().then(setAllUsers);
     if(activeTab==='campaigns') fetchCampaigns().then(setAllCamps);
-    if(activeTab==='esewa') {} // no extra load needed
-    if(activeTab==='payments') {
-      supa.from('payment_orders').select('*').order('created_at',{ascending:false}).then(({data})=>setAllPayments(data||[]));
-    }
+
   },[activeTab]);
 
   async function save(key) {
@@ -1819,7 +1579,7 @@ function AdminPanel({ user, appConfig, onConfigChange, onClose }) {
       <div style={{maxWidth:1100,margin:'0 auto',padding:'28px 24px 64px'}}>
         {/* Tab bar */}
         <div style={{display:'flex',gap:8,marginBottom:24,flexWrap:'wrap'}}>
-          {[['overview','📊 Overview'],['points','⚡ Points'],['bonuses','🎁 Bonuses'],['esewa','🟢 eSewa'],['payoneer','💳 Payoneer'],['payments','🧾 Payments'],['users','👥 Users'],['campaigns','🚀 Campaigns']].map(([id,label])=>(
+          {[['overview','📊 Overview'],['points','⚡ Points'],['bonuses','🎁 Bonuses'],['users','👥 Users'],['campaigns','🚀 Campaigns']].map(([id,label])=>(
             <button key={id} onClick={()=>setActiveTab(id)} style={tabStyle(id)}>{label}</button>
           ))}
         </div>
@@ -2002,129 +1762,6 @@ function AdminPanel({ user, appConfig, onConfigChange, onClose }) {
                     );
                   })}
 
-        {/* ── eSEWA CONFIG ── */}
-        {activeTab==='esewa'&&(
-          <div className="fade-up" style={{display:'flex',flexDirection:'column',gap:20}}>
-            <h2 style={{fontSize:20,fontWeight:800,color:'#fff'}}>🟢 eSewa Configuration</h2>
-            <p style={{fontSize:13,color:'#64748b'}}>Configure your eSewa merchant account and set NPR prices for each package.</p>
-            <div style={{background:'rgba(109,179,63,.06)',border:'1px solid rgba(109,179,63,.2)',borderRadius:12,padding:'14px 18px',fontSize:12,color:'#6db33f'}}>
-              💡 Register as a merchant at <strong>merchant.esewa.com.np</strong> to get your merchant code. Use <strong>EPAYTEST</strong> for testing.
-            </div>
-            {sectionCard(<>
-              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:4}}>
-                <div><div style={{fontSize:15,fontWeight:700,color:'#fff'}}>eSewa Settings</div><div style={{fontSize:12,color:'#64748b'}}>Merchant credentials and mode</div></div>
-                <SaveBtn k="esewa"/>
-              </div>
-              {row('Merchant Code (scd)', 'From your eSewa merchant account',
-                <input value={cfg.esewa?.merchant_code||''} onChange={e=>setCfg(c=>({...c,esewa:{...c.esewa,merchant_code:e.target.value}}))}
-                  placeholder="EPAYTEST"
-                  style={{padding:'8px 12px',borderRadius:8,border:'1px solid rgba(255,255,255,.12)',background:'#0f0f1a',color:'#fff',fontSize:13,outline:'none',fontFamily:'inherit',width:180}}/>
-              )}
-              {row('Mode',
-                cfg.esewa?.live_mode?'LIVE — real payments':'TEST — use test credentials',
-                <Toggle val={cfg.esewa?.live_mode||false} onChange={()=>setCfg(c=>({...c,esewa:{...c.esewa,live_mode:!c.esewa?.live_mode}}))}/>
-              )}
-              <div style={{borderTop:'1px solid rgba(255,255,255,.06)',paddingTop:14,marginTop:4}}>
-                <div style={{fontSize:13,fontWeight:700,color:'#fff',marginBottom:10}}>NPR Prices (1 USD ≈ 136 NPR)</div>
-                {[['starter','Starter — $0.99'],['growth','Growth — $1.99'],['pro','Pro — $5.99'],['creator','Creator — $9.99']].map(([k,label])=>(
-                  <div key={k} style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
-                    <span style={{fontSize:13,color:'#94a3b8'}}>{label}</span>
-                    <div style={{display:'flex',alignItems:'center',gap:6}}>
-                      <span style={{fontSize:12,color:'#64748b'}}>NPR</span>
-                      {numInput(cfg.esewa?.prices?.[k]||0, v=>setCfg(c=>({...c,esewa:{...c.esewa,prices:{...c.esewa?.prices,[k]:v}}})), 1, 100000)}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              {!cfg.esewa?.live_mode&&(
-                <div style={{background:'rgba(245,158,11,.06)',border:'1px solid rgba(245,158,11,.15)',borderRadius:8,padding:'10px 14px',fontSize:11,color:'#f59e0b'}}>
-                  🧪 Test mode: eSewa ID <strong>9806800001</strong> · Password <strong>Nepal@123</strong> · MPIN <strong>1122</strong>
-                </div>
-              )}
-            </>)}
-          </div>
-        )}
-
-        {/* ── PAYONEER CONFIG ── */}
-        {activeTab==='payoneer'&&(
-          <div className="fade-up" style={{display:'flex',flexDirection:'column',gap:20}}>
-            <h2 style={{fontSize:20,fontWeight:800,color:'#fff'}}>Payoneer Payment Links</h2>
-            <p style={{fontSize:13,color:'#64748b'}}>Paste your Payoneer payment request links for each package. Users will be redirected to these when they purchase.</p>
-            <div style={{background:'rgba(255,107,53,.06)',border:'1px solid rgba(255,107,53,.2)',borderRadius:12,padding:'14px 18px',fontSize:12,color:'#ff6b35',marginBottom:4}}>
-              💡 To get your payment links: Log in to Payoneer → <strong>Activity → Billing Service → Create Payment Request</strong> → set the amount → copy the link
-            </div>
-            {sectionCard(<>
-              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:4}}>
-                <div><div style={{fontSize:15,fontWeight:700,color:'#fff'}}>Your Payoneer Email / Username</div><div style={{fontSize:12,color:'#64748b'}}>Shown to users as alternative payment method</div></div>
-                <SaveBtn k="payoneer_links"/>
-              </div>
-              <input value={cfg.payoneer_links?.email||''} onChange={e=>setCfg(c=>({...c,payoneer_links:{...c.payoneer_links,email:e.target.value}}))}
-                placeholder="your@payoneer-email.com or Payoneer username"
-                style={{width:'100%',padding:'10px 14px',borderRadius:9,border:'1px solid rgba(255,255,255,.1)',background:'#0f0f1a',color:'#fff',fontSize:13,outline:'none',fontFamily:'inherit'}}/>
-              {[['starter','Starter — $0.99'],['growth','Growth — $1.99'],['pro','Pro — $5.99'],['creator','Creator — $9.99']].map(([k,label])=>(
-                <div key={k}>
-                  <div style={{fontSize:12,fontWeight:600,color:'#94a3b8',marginBottom:5}}>{label} payment link</div>
-                  <input value={cfg.payoneer_links?.[k]||''} onChange={e=>setCfg(c=>({...c,payoneer_links:{...c.payoneer_links,[k]:e.target.value}}))}
-                    placeholder="https://login.payoneer.com/page/billing/..."
-                    style={{width:'100%',padding:'10px 14px',borderRadius:9,border:`1px solid ${cfg.payoneer_links?.[k]?'rgba(74,222,128,.3)':'rgba(255,255,255,.1)'}`,background:'#0f0f1a',color:'#fff',fontSize:12,outline:'none',fontFamily:'inherit'}}/>
-                </div>
-              ))}
-            </>)}
-          </div>
-        )}
-
-        {/* ── PAYMENTS ── */}
-        {activeTab==='payments'&&(
-          <div className="fade-up" style={{display:'flex',flexDirection:'column',gap:16}}>
-            <h2 style={{fontSize:20,fontWeight:800,color:'#fff'}}>Payment Orders <span style={{fontSize:13,fontWeight:400,color:'#64748b'}}>({allPayments?.length||0} total)</span></h2>
-            <p style={{fontSize:13,color:'#64748b'}}>Review and approve pending Payoneer payments. Approving credits the user's points automatically.</p>
-            {!allPayments
-              ? <div style={{display:'flex',alignItems:'center',gap:8,color:'#4b5563',padding:'32px',justifyContent:'center'}}><div className="spinner" style={{width:16,height:16}}/> Loading orders…</div>
-              : allPayments.length===0
-                ? <div style={{textAlign:'center',padding:'40px',color:'#374151',background:'#1a1a2e',borderRadius:12}}>No payment orders yet.</div>
-                : <div style={{display:'flex',flexDirection:'column',gap:10}}>
-                    {allPayments.map(p=>(
-                      <div key={p.id} style={{background:'#1a1a2e',border:`1px solid ${p.status==='approved'?'rgba(74,222,128,.2)':p.status==='rejected'?'rgba(248,113,113,.2)':'rgba(255,255,255,.06)'}`,borderRadius:12,padding:'16px 18px'}}>
-                        <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:12,flexWrap:'wrap'}}>
-                          <div>
-                            <div style={{fontWeight:700,fontSize:14,color:'#fff',marginBottom:3}}>{p.package_name} Pack — ${p.amount}</div>
-                            <div style={{fontSize:12,color:'#64748b',marginBottom:4}}>{fmtDate(p.created_at)} {fmtTime(p.created_at)}</div>
-                            {p.payoneer_txn_id&&<div style={{fontSize:12,color:'#22d3ee'}}>Transaction ID: {p.payoneer_txn_id}</div>}
-                            {p.admin_note&&<div style={{fontSize:11,color:'#94a3b8',marginTop:3}}>Note: {p.admin_note}</div>}
-                          </div>
-                          <div style={{display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
-                            <span style={{fontWeight:800,fontSize:13,color:'#f59e0b'}}>+{(p.pts||0).toLocaleString()} pts</span>
-                            <span style={{background:p.status==='approved'?'rgba(74,222,128,.15)':p.status==='rejected'?'rgba(248,113,113,.15)':'rgba(245,158,11,.15)',color:p.status==='approved'?'#4ade80':p.status==='rejected'?'#f87171':'#f59e0b',border:`1px solid ${p.status==='approved'?'rgba(74,222,128,.3)':p.status==='rejected'?'rgba(248,113,113,.3)':'rgba(245,158,11,.3)'}`,borderRadius:999,padding:'2px 10px',fontSize:11,fontWeight:700}}>
-                              {p.status==='approved'?'✓ Approved':p.status==='rejected'?'✗ Rejected':'⏳ Pending'}
-                            </span>
-                          </div>
-                        </div>
-                        {p.status==='pending'&&(
-                          <div style={{display:'flex',gap:8,marginTop:12}}>
-                            <button onClick={async()=>{
-                              await supa.rpc('earn_points',{uid:p.user_id,amount:p.pts});
-                              await supa.from('payment_orders').update({status:'approved',reviewed_at:new Date().toISOString(),reviewed_by:user.id}).eq('id',p.id);
-                              await supa.from('purchases').insert({user_id:p.user_id,package_id:p.package_id,package_name:p.package_name,pts:p.pts,price:p.amount});
-                              setAllPayments(prev=>prev.map(x=>x.id===p.id?{...x,status:'approved'}:x));
-                            }} style={{flex:1,padding:'8px',borderRadius:8,border:'none',background:'linear-gradient(135deg,#16a34a,#15803d)',color:'#fff',fontWeight:700,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>
-                              ✓ Approve & Credit {p.pts} pts
-                            </button>
-                            <button onClick={async()=>{
-                              await supa.from('payment_orders').update({status:'rejected',reviewed_at:new Date().toISOString(),reviewed_by:user.id}).eq('id',p.id);
-                              setAllPayments(prev=>prev.map(x=>x.id===p.id?{...x,status:'rejected'}:x));
-                            }} style={{padding:'8px 14px',borderRadius:8,border:'1px solid rgba(248,113,113,.3)',background:'rgba(248,113,113,.08)',color:'#f87171',fontWeight:700,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>
-                              ✗ Reject
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>}
-          </div>
-        )}
-                </div>}
-          </div>
-        )}
       </div>
     </div>
   );
@@ -2181,7 +1818,6 @@ function App() {
   const [tab,        setTab]        = useState('discover');
   const [camps,      setCamps]      = useState([]);
   const [task,       setTask]       = useState(null);
-  const [checkout,   setCheckout]   = useState(null);
   const [footerPage, setFooterPage] = useState(null);
   const [showAdmin,  setShowAdmin]  = useState(false);
   const [appConfig,  setAppConfig]  = useState({});
@@ -2194,22 +1830,6 @@ function App() {
     }, 500);
     setTimeout(()=>clearInterval(gisInterval), 10000); // stop polling after 10s
 
-    // Handle eSewa payment return
-    const urlParams = new URLSearchParams(window.location.search);
-    const esewaStatus = urlParams.get('esewa');
-    if(esewaStatus === 'success') {
-      const returnedPid = urlParams.get('pid');
-      const returnedPkg = urlParams.get('pkg');
-      const refId       = urlParams.get('refId') || urlParams.get('oid') || '';
-      if(returnedPid && refId) {
-        supa.from('payment_orders')
-          .update({ payoneer_txn_id: `eSewa:${refId}` })
-          .eq('payoneer_txn_id', decodeURIComponent(returnedPid))
-          .catch(()=>{});
-      }
-      // Clean URL without reload
-      window.history.replaceState({}, '', window.location.pathname);
-    }
 
     async function init() {
       try {
@@ -2313,12 +1933,7 @@ function App() {
     Object.assign(TASK_DEFS, dyn);
   }
 
-  if(checkout) return (
-    <CheckoutPage pkg={checkout} user={user} appConfig={appConfig}
-      onBack={()=>setCheckout(null)}
-      onSuccess={()=>{ setCheckout(null); setTab('discover'); }}
-    />
-  );
+
 
   // Full-screen admin panel
   if(showAdmin) return (
@@ -2343,7 +1958,7 @@ function App() {
       <div style={{maxWidth:960,margin:'0 auto',padding:'0 20px 0',width:'100%',flex:1}}>
         <TabBar activeTab={tab} setActiveTab={t=>{setTab(t);if(t!=='earn')setTask(null);}}/>
         <div style={{marginTop:22,paddingBottom:16}}>
-          {tab==='discover'  && <DiscoverTab user={user} campaigns={camps} setActiveTab={setTab} setActiveTask={setActiveTask} onCheckout={setCheckout}/>}
+          {tab==='discover'  && <DiscoverTab user={user} campaigns={camps} setActiveTab={setTab} setActiveTask={setActiveTask}/>}
           {tab==='earn'      && <EarnTab user={user} campaigns={camps} onClaim={handleClaim} activeTask={task} setActiveTask={setActiveTask}/>}
           {tab==='promote'   && <PromoteTab user={user} campaigns={camps} onLaunch={handleLaunch}/>}
           {tab==='dashboard' && <DashboardTab user={user} setUser={setUser} campaigns={camps} onClaimBonus={handleClaimBonus}/>}
