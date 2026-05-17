@@ -237,11 +237,38 @@ function bonusStatus(user, type) {
 
 // ── DB helpers ────────────────────────────────────────────────────────────────
 // Map Supabase campaign row → app shape
+// ── Platforms ─────────────────────────────────────────────────────────────────
+const PLATFORMS = {
+  youtube:   { name:'YouTube',   emoji:'▶',  color:'#ff0000', bg:'rgba(255,0,0,.12)',     active:true  },
+  instagram: { name:'Instagram', emoji:'📸', color:'#e1306c', bg:'rgba(225,48,108,.12)',  active:true  },
+  tiktok:    { name:'TikTok',    emoji:'🎵', color:'#69c9d0', bg:'rgba(105,201,208,.12)', active:false },
+  facebook:  { name:'Facebook',  emoji:'👥', color:'#1877f2', bg:'rgba(24,119,242,.12)',  active:false },
+};
+
+// Platform-specific task labels
+const PLATFORM_LABELS = {
+  youtube:   { subscribe:'Watch + Subscribe', subscribe_desc:"Watch & subscribe to the creator's channel",   subscribe_action:'Subscribe on YouTube'  },
+  instagram: { subscribe:'Watch + Follow',    subscribe_desc:"Watch the reel & follow the creator's account", subscribe_action:'Follow on Instagram'  },
+};
+
+function extractInstagramId(url='') {
+  const m = url.match(/instagram\.com\/(?:p|reel|tv|reels)\/([A-Za-z0-9_-]+)/);
+  return m ? m[1] : null;
+}
+function extractInstagramUser(url='') {
+  const m = url.match(/instagram\.com\/([A-Za-z0-9_.]+)\/?$/);
+  return m ? m[1] : null;
+}
+function getInstagramEmbedUrl(postId) {
+  return `https://www.instagram.com/p/${postId}/embed/`;
+}
+
 function mapCamp(c) {
   return {
     id: c.id, ownerId: c.owner_id, url: c.url, channelUrl: c.channel_url||'',
     title: c.title, target: c.target, delivered: c.delivered,
     taskType: c.task_type, watchDuration: c.watch_duration,
+    platform: c.platform || 'youtube',
     createdAt: new Date(c.created_at).getTime(),
   };
 }
@@ -788,6 +815,25 @@ function DiscoverTab({ user, campaigns, setActiveTab, setActiveTask }) {
   );
 }
 
+// ── Platform Tabs ─────────────────────────────────────────────────────────────
+function PlatformTabs({ selected, onChange }) {
+  return (
+    <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:4}}>
+      {Object.entries(PLATFORMS).map(([key,p])=>{
+        const active = selected===key;
+        return (
+          <button key={key} onClick={()=>p.active&&onChange(key)}
+            style={{display:'flex',alignItems:'center',gap:7,padding:'8px 16px',borderRadius:999,border:`1px solid ${active?p.color+'80':p.active?p.color+'30':'rgba(255,255,255,.06)'}`,background:active?p.bg:'transparent',color:active?p.color:p.active?'#94a3b8':'#374151',fontWeight:active?700:600,fontSize:13,cursor:p.active?'pointer':'not-allowed',fontFamily:'inherit',transition:'all .15s',position:'relative'}}>
+            <span style={{fontSize:15}}>{p.emoji}</span>
+            {p.name}
+            {!p.active&&<span style={{position:'absolute',top:-8,right:-4,background:'#374151',color:'#64748b',fontSize:9,fontWeight:800,padding:'1px 6px',borderRadius:999,whiteSpace:'nowrap'}}>SOON</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Earn Tab ──────────────────────────────────────────────────────────────────
 function EarnTab({ user, campaigns, onClaim, activeTask, setActiveTask }) {
   const [timeLeft,     setTimeLeft]    = useState(0);
@@ -874,17 +920,18 @@ function EarnTab({ user, campaigns, onClaim, activeTask, setActiveTask }) {
   }
   function handleBack(){clearInterval(intRef.current);setActiveTask(null);}
 
-  const [filter, setFilter] = useState('all');
+  const [filter,   setFilter]   = useState('all');
+  const [platform, setPlatform] = useState('youtube');
+
   const canClaim=timerDone&&!claimed&&(activeTask?.taskType==='watch'?true:activeTask?.taskType==='subscribe'?subStep==='done':comment.trim().length>0);
 
-  // Campaigns still have capacity
-  const avail = campaigns.filter(c=>c.delivered<c.target);
-  // Split into available (no cooldown) and on-cooldown
-  const available  = avail.filter(c=>!watchedToday?.has(c.id));
-  const onCooldown = avail.filter(c=> watchedToday?.has(c.id));
-  // Apply category filter to available only
-  const filtered = filter==='all' ? available : available.filter(c=>c.taskType===filter);
+  // Filter by platform first, then by capacity
+  const avail = campaigns.filter(c=>c.delivered<c.target && (c.platform||'youtube')===platform);
+  const available      = avail.filter(c=>!watchedToday?.has(c.id));
+  const onCooldown     = avail.filter(c=> watchedToday?.has(c.id));
+  const filtered       = filter==='all' ? available : available.filter(c=>c.taskType===filter);
   const filteredCooldown = filter==='all' ? onCooldown : onCooldown.filter(c=>c.taskType===filter);
+  const pLabels = PLATFORM_LABELS[platform] || PLATFORM_LABELS.youtube;
 
   // Helper: ms until a campaign's 24h cooldown expires
   function cooldownLeft(campaignId) {
@@ -906,9 +953,14 @@ function EarnTab({ user, campaigns, onClaim, activeTask, setActiveTask }) {
   if(!activeTask) return (
     <div className="fade-up" style={{display:'flex',flexDirection:'column',gap:18}}>
 
+      {/* Platform Tabs */}
+      <PlatformTabs selected={platform} onChange={p=>{setPlatform(p);setFilter('all');}}/>
+
       {/* Header */}
       <div>
-        <h2 style={{fontSize:17,fontWeight:800,color:'#fff',marginBottom:4}}>Choose a Task to Earn</h2>
+        <h2 style={{fontSize:17,fontWeight:800,color:'#fff',marginBottom:4,display:'flex',alignItems:'center',gap:8}}>
+          <span>{PLATFORMS[platform]?.emoji}</span> Choose a {PLATFORMS[platform]?.name} Task
+        </h2>
         <p style={{fontSize:13,color:'#64748b'}}>Select a category, then pick a task. All earnings are saved to your Supabase account.</p>
       </div>
 
@@ -1048,8 +1100,12 @@ function EarnTab({ user, campaigns, onClaim, activeTask, setActiveTask }) {
     </div>
   );
 
-  const d=TASK_DEFS[activeTask.taskType]||TASK_DEFS.watch;
-  const videoId=extractVideoId(activeTask.url);
+  const d          = TASK_DEFS[activeTask.taskType]||TASK_DEFS.watch;
+  const taskPlatform = activeTask.platform || 'youtube';
+  const isIG         = taskPlatform === 'instagram';
+  const videoId      = isIG ? extractInstagramId(activeTask.url) : extractVideoId(activeTask.url);
+  const igUser       = isIG ? extractInstagramUser(activeTask.channelUrl||activeTask.url) : null;
+  const pLabels      = PLATFORM_LABELS[taskPlatform] || PLATFORM_LABELS.youtube;
   return (
     <div className="fade-up" style={{display:'flex',flexDirection:'column',gap:16}}>
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
@@ -1061,15 +1117,18 @@ function EarnTab({ user, campaigns, onClaim, activeTask, setActiveTask }) {
         <div style={{display:'flex',alignItems:'center',gap:10}}><TaskBadge taskType={activeTask.taskType}/><span style={{fontWeight:800,fontSize:15,color:d.accent}}>+{d.pts} pts</span></div>
       </div>
       <div style={{textAlign:'center'}}><div style={{fontWeight:700,fontSize:15,color:'#fff',marginBottom:3}}>{activeTask.title}</div><div style={{fontSize:12,color:'#64748b'}}>{d.desc}</div></div>
-      <div style={{borderRadius:14,overflow:'hidden',border:'1px solid rgba(255,255,255,.06)',boxShadow:`0 0 48px ${d.accent}18`,aspectRatio:'16/9',background:'#0d0d1f'}}>
-        {videoId
-          ? <iframe key={videoId} src={`https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1`} style={{width:'100%',height:'100%',border:'none'}} allow="autoplay; encrypted-media" allowFullScreen/>
-          : <div style={{width:'100%',height:'100%',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:10,color:'#64748b'}}>
-              <span style={{fontSize:32}}>⚠️</span>
-              <span style={{fontSize:13}}>Could not load video. Invalid URL.</span>
-              <a href={activeTask.url} target="_blank" rel="noreferrer" style={{fontSize:12,color:'#a855f7'}}>Open on YouTube →</a>
-            </div>
-        }
+      <div style={{borderRadius:14,overflow:'hidden',border:'1px solid rgba(255,255,255,.06)',boxShadow:`0 0 48px ${d.accent}18`,aspectRatio:isIG?'4/5':'16/9',background:'#0d0d1f'}}>
+        {videoId && !isIG && <iframe key={videoId} src={`https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1`} style={{width:'100%',height:'100%',border:'none'}} allow="autoplay; encrypted-media" allowFullScreen/>}
+        {videoId && isIG  && <iframe key={videoId} src={getInstagramEmbedUrl(videoId)} style={{width:'100%',height:'100%',border:'none'}} scrolling="no" allowTransparency/>}
+        {!videoId && (
+          <div style={{width:'100%',height:'100%',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:12,color:'#64748b',padding:24}}>
+            <span style={{fontSize:32}}>{isIG?'📸':'⚠️'}</span>
+            <span style={{fontSize:13,textAlign:'center'}}>Could not load {isIG?'Instagram post':'video'}. Check the URL.</span>
+            <a href={activeTask.url} target="_blank" rel="noreferrer" style={{fontSize:12,color:'#a855f7',display:'flex',alignItems:'center',gap:5}}>
+              <ExtLink s={11} c="#a855f7"/> Open on {isIG?'Instagram':'YouTube'} →
+            </a>
+          </div>
+        )}
       </div>
       <div style={{background:'#13132a',borderRadius:14,border:'1px solid rgba(255,255,255,.06)',padding:'20px 22px',display:'flex',gap:24,alignItems:'flex-start',flexWrap:'wrap'}}>
         <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:6}}>
@@ -1080,10 +1139,33 @@ function EarnTab({ user, campaigns, onClaim, activeTask, setActiveTask }) {
           {activeTask.taskType==='watch'&&<div style={{fontSize:13,color:timerDone?'#4ade80':'#94a3b8',display:'flex',alignItems:'center',gap:6}}>{timerDone?<><Check s={14} c="#4ade80"/> Watch complete!</>:<>Keep watching…</>}</div>}
           {activeTask.taskType==='subscribe'&&(
             <div style={{display:'flex',flexDirection:'column',gap:10}}>
-              <div style={{fontSize:13,color:timerDone?'#fff':'#4b5563',display:'flex',alignItems:'center',gap:6}}><Bell s={13} c={timerDone?'#a855f7':'#4b5563'}/>{timerDone?'Subscribe to the channel:':` Subscribe unlocks in ${timeLeft}s…`}</div>
-              {subStep==='idle'&&<button disabled={!timerDone} onClick={handleSubscribeOpen} className={timerDone?'pulse':''} style={{padding:'11px 16px',borderRadius:10,border:'none',fontFamily:'inherit',cursor:timerDone?'pointer':'not-allowed',fontWeight:700,fontSize:13,display:'flex',alignItems:'center',justifyContent:'center',gap:8,background:timerDone?'linear-gradient(135deg,#ff0000,#cc0000)':'#1f2937',color:timerDone?'#fff':'#4b5563',boxShadow:timerDone?'0 0 20px rgba(255,0,0,.3)':'none',transition:'all .2s'}}><Youtube s={16} c="white"/> {timerDone?'▶ Subscribe on YouTube':`Locked — ${timeLeft}s remaining`}</button>}
-              {subStep==='opened'&&<div style={{display:'flex',flexDirection:'column',gap:8}}><div style={{fontSize:12,color:'#94a3b8',padding:'8px 12px',background:'rgba(168,85,247,.08)',borderRadius:8,border:'1px solid rgba(168,85,247,.2)'}}>✅ YouTube opened. Subscribe then confirm below.</div><div style={{display:'flex',gap:8}}><button onClick={()=>setSubStep('done')} style={{flex:1,padding:'10px',borderRadius:9,border:'none',background:'linear-gradient(135deg,#16a34a,#15803d)',color:'#fff',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:6}}><Check s={13} c="#fff"/> Yes, Subscribed</button><button onClick={()=>setSubStep('idle')} style={{padding:'10px 14px',borderRadius:9,border:'1px solid rgba(255,255,255,.1)',background:'transparent',color:'#94a3b8',fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>Not yet</button></div></div>}
-              {subStep==='done'&&<div style={{fontSize:13,color:'#4ade80',display:'flex',alignItems:'center',gap:6,padding:'10px 14px',background:'rgba(22,163,74,.12)',borderRadius:9,border:'1px solid rgba(74,222,128,.2)'}}><Check s={14} c="#4ade80"/> Subscribed! Claim your points.</div>}
+              <div style={{fontSize:13,color:timerDone?'#fff':'#4b5563',display:'flex',alignItems:'center',gap:6}}>
+                <Bell s={13} c={timerDone?'#a855f7':'#4b5563'}/>
+                {timerDone ? (isIG?'Now follow the account:':'Now subscribe to the channel:') : `${isIG?'Follow':'Subscribe'} unlocks in ${timeLeft}s…`}
+              </div>
+              {subStep==='idle'&&<button disabled={!timerDone} onClick={handleSubscribeOpen} className={timerDone?'pulse':''}
+                style={{padding:'11px 16px',borderRadius:10,border:'none',fontFamily:'inherit',cursor:timerDone?'pointer':'not-allowed',fontWeight:700,fontSize:13,display:'flex',alignItems:'center',justifyContent:'center',gap:8,
+                  background:timerDone?(isIG?'linear-gradient(135deg,#e1306c,#833ab4)':'linear-gradient(135deg,#ff0000,#cc0000)'):'#1f2937',
+                  color:timerDone?'#fff':'#4b5563',
+                  boxShadow:timerDone?(isIG?'0 0 20px rgba(225,48,108,.35)':'0 0 20px rgba(255,0,0,.3)'):'none',transition:'all .2s'}}>
+                {timerDone
+                  ? (isIG ? <><span style={{fontSize:16}}>📸</span> Follow on Instagram</> : <><Youtube s={16} c="white"/> Subscribe on YouTube</>)
+                  : `Locked — ${timeLeft}s remaining`}
+              </button>}
+              {subStep==='opened'&&<div style={{display:'flex',flexDirection:'column',gap:8}}>
+                <div style={{fontSize:12,color:'#94a3b8',padding:'8px 12px',background:'rgba(168,85,247,.08)',borderRadius:8,border:'1px solid rgba(168,85,247,.2)'}}>
+                  ✅ {isIG?'Instagram opened. Follow the account,':'YouTube opened. Subscribe,'} then confirm below.
+                </div>
+                <div style={{display:'flex',gap:8}}>
+                  <button onClick={()=>setSubStep('done')} style={{flex:1,padding:'10px',borderRadius:9,border:'none',background:'linear-gradient(135deg,#16a34a,#15803d)',color:'#fff',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>
+                    <Check s={13} c="#fff"/> Yes, {isIG?'Followed!':'Subscribed!'}
+                  </button>
+                  <button onClick={()=>setSubStep('idle')} style={{padding:'10px 14px',borderRadius:9,border:'1px solid rgba(255,255,255,.1)',background:'transparent',color:'#94a3b8',fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>Not yet</button>
+                </div>
+              </div>}
+              {subStep==='done'&&<div style={{fontSize:13,color:'#4ade80',display:'flex',alignItems:'center',gap:6,padding:'10px 14px',background:'rgba(22,163,74,.12)',borderRadius:9,border:'1px solid rgba(74,222,128,.2)'}}>
+                <Check s={14} c="#4ade80"/> {isIG?'Followed!':'Subscribed!'} Claim your points.
+              </div>}
             </div>
           )}
           {activeTask.taskType==='comment'&&(
@@ -1149,17 +1231,22 @@ function EarnTab({ user, campaigns, onClaim, activeTask, setActiveTask }) {
 
 // ── Promote Tab ───────────────────────────────────────────────────────────────
 function PromoteTab({ user, campaigns, onLaunch }) {
+  const [platform,setPlatform]=useState('youtube');
   const [url,setUrl]=useState('');
   const [chan,setChan]=useState('');
   const [type,setType]=useState('watch');
   const [dur,setDur]=useState(30);
   const [views,setViews]=useState(100);
   const d=TASK_DEFS[type], cost=views*d.costPerView;
+  const isIG = platform==='instagram';
+  const pLabels = PLATFORM_LABELS[platform] || PLATFORM_LABELS.youtube;
   const can=url.trim().length>0&&(type==='watch'||chan.trim().length>0)&&user.points>=cost;
+  const urlPh = isIG ? 'https://www.instagram.com/reel/...' : 'https://youtube.com/watch?v=...';
+  const chanPh = isIG ? 'https://www.instagram.com/yourusername/' : 'https://youtube.com/@YourChannel';
 
   function launch(){
     if(!can) return;
-    const campData={ url:url.trim(), channelUrl:chan.trim()||url.trim(), title:`My Video #${Date.now().toString().slice(-4)}`, target:views, taskType:type, watchDuration:dur };
+    const campData={ url:url.trim(), channelUrl:chan.trim()||url.trim(), title:`My ${isIG?'Reel':'Video'} #${Date.now().toString().slice(-4)}`, target:views, taskType:type, watchDuration:dur, platform };
     // Reset form instantly
     setUrl('');setChan('');setType('watch');setDur(30);setViews(100);
     // Save in background
@@ -1173,15 +1260,21 @@ function PromoteTab({ user, campaigns, onLaunch }) {
   return (
     <div className="fade-up" style={{display:'flex',flexDirection:'column',gap:22}}>
       <div style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,.06)',borderRadius:16,padding:22}}>
-        <h2 style={{fontSize:17,fontWeight:700,color:'#fff',marginBottom:18,display:'flex',alignItems:'center',gap:8}}><Rocket s={17} c="#a855f7"/> Launch a Campaign</h2>
-        {lbl('YouTube Video URL','(required)')}{ti(url,setUrl,'https://youtube.com/watch?v=...')}
-        {lbl('Your Channel URL',type!=='watch'?'(required)':'(optional)')}{ti(chan,setChan,'https://youtube.com/@YourChannel')}
+        <div style={{marginBottom:18}}>
+          <div style={{fontSize:12,color:'#64748b',marginBottom:8,fontWeight:600}}>Select Platform</div>
+          <PlatformTabs selected={platform} onChange={p=>{setPlatform(p);setType('watch');setUrl('');setChan('');}}/>
+        </div>
+        <h2 style={{fontSize:17,fontWeight:700,color:'#fff',marginBottom:18,display:'flex',alignItems:'center',gap:8}}>
+          <span>{PLATFORMS[platform]?.emoji}</span> Launch {PLATFORMS[platform]?.name} Campaign
+        </h2>
+        {lbl(`${PLATFORMS[platform]?.name} ${isIG?'Reel/Post':'Video'} URL`,'(required)')}{ti(url,setUrl,urlPh)}
+        {lbl(isIG?'Your Instagram Profile URL':`Your ${PLATFORMS[platform]?.name} Channel URL`,type!=='watch'?'(required)':'(optional)')}{ti(chan,setChan,chanPh)}
         <div style={{marginBottom:18}}>
           {lbl('Task Type for Viewers')}
           <div style={{display:'flex',flexDirection:'column',gap:7}}>
             {Object.entries(TASK_DEFS).map(([k,td])=>{const a=type===k;return(
               <div key={k} onClick={()=>setType(k)} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 14px',borderRadius:9,border:`1px solid ${a?td.accent+'60':'rgba(255,255,255,.07)'}`,background:a?`${td.accent}10`:'#0f0f1a',cursor:'pointer',transition:'all .15s'}}>
-                <div style={{display:'flex',alignItems:'center',gap:9}}><span style={{fontSize:18}}>{td.emoji}</span><div><div style={{fontWeight:700,fontSize:13,color:a?td.accent:'#fff'}}>{td.label}</div><div style={{fontSize:11,color:'#4b5563'}}>{td.desc}</div></div></div>
+                <div style={{display:'flex',alignItems:'center',gap:9}}><span style={{fontSize:18}}>{td.emoji}</span><div><div style={{fontWeight:700,fontSize:13,color:a?td.accent:'#fff'}}>{k==='subscribe'?pLabels?.subscribe||td.label:td.label}</div><div style={{fontSize:11,color:'#4b5563'}}>{td.desc}</div></div></div>
                 <div style={{textAlign:'right'}}><div style={{fontWeight:800,fontSize:13,color:a?td.accent:'#64748b'}}>{td.costPerView} pts/view</div><div style={{fontSize:10,color:'#4b5563'}}>earns {td.pts} pts</div></div>
               </div>
             );})}
@@ -1918,7 +2011,7 @@ function App() {
       supa.from('campaigns').insert({
         owner_id:user.id, url:campData.url, channel_url:campData.channelUrl,
         title:campData.title, target:campData.target, delivered:0,
-        task_type:campData.taskType, watch_duration:campData.watchDuration,
+        task_type:campData.taskType, watch_duration:campData.watchDuration, platform:campData.platform||"youtube",
       }).select().single().then(({data})=>{
         if(data) setCamps(prev=>prev.map(c=>c.id===tempId?mapCamp(data):c));
       }),
