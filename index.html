@@ -1688,6 +1688,7 @@ function AdminPanel({ user, appConfig, onConfigChange, onClose }) {
   const [activeTab, setActiveTab] = useState('overview');
   const [allUsers,    setAllUsers]    = useState(null);
   const [allCamps,    setAllCamps]    = useState(null);
+  const [apkDownloads,setApkDownloads]= useState(null); // fetched from GitHub API
   const [saving,    setSaving]    = useState('');
   const [saved,     setSaved]     = useState('');
 
@@ -1705,7 +1706,15 @@ function AdminPanel({ user, appConfig, onConfigChange, onClose }) {
   useEffect(()=>{
     if(activeTab==='users')     fetchLeaderboard().then(setAllUsers);
     if(activeTab==='campaigns') fetchCampaigns().then(setAllCamps);
-
+    if(activeTab==='overview' && apkDownloads===null) {
+      fetch('https://api.github.com/repos/rkadel1488/viewboost/releases')
+        .then(r=>r.json())
+        .then(data=>{
+          const total = data.reduce((s,r)=>s+r.assets.reduce((ss,a)=>ss+a.download_count,0),0);
+          setApkDownloads(total);
+        })
+        .catch(()=>setApkDownloads(0));
+    }
   },[activeTab]);
 
   async function save(key) {
@@ -1802,7 +1811,8 @@ function AdminPanel({ user, appConfig, onConfigChange, onClose }) {
             <h2 style={{fontSize:20,fontWeight:800,color:'#fff'}}>Platform Overview</h2>
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:12}}>
               {[
-                {icon:'⚙',label:'Config Version',val:'Live',col:'#4ade80',sub:'Changes apply instantly'},
+                {icon:'📥',label:'Android Downloads',val:apkDownloads===null?'…':apkDownloads.toLocaleString(),col:'#4ade80',sub:'Total APK downloads from GitHub'},
+                {icon:'⚙',label:'Config Version',val:'Live',col:'#94a3b8',sub:'Changes apply instantly'},
                 {icon:'🔑',label:'Admin User',val:user.name?.split(' ')[0]||'Admin',col:'#a855f7',sub:user.email},
                 {icon:'💰',label:'Signup Bonus',val:`${cfg.signup_bonus?.pts?.toLocaleString()} pts`,col:'#f59e0b',sub:'Awarded on registration'},
                 {icon:'📆',label:'Weekly Bonus',val:cfg.bonus_weekly?.enabled?`${cfg.bonus_weekly.pts} pts`:'Disabled',col:cfg.bonus_weekly?.enabled?'#22d3ee':'#374151',sub:`Every ${cfg.bonus_weekly?.interval_days} days`},
@@ -1817,6 +1827,25 @@ function AdminPanel({ user, appConfig, onConfigChange, onClose }) {
                 </div>
               ))}
             </div>
+            {/* APK Downloads Detail */}
+            <div style={{background:'linear-gradient(135deg,#0f2a1a,#1a2e0f)',border:'1px solid rgba(74,222,128,.2)',borderRadius:14,padding:'18px 22px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:16,flexWrap:'wrap'}}>
+              <div style={{display:'flex',alignItems:'center',gap:14}}>
+                <div style={{fontSize:36}}>📱</div>
+                <div>
+                  <div style={{fontWeight:800,fontSize:15,color:'#fff',marginBottom:3}}>Android App Downloads</div>
+                  <div style={{fontSize:12,color:'#64748b'}}>Tracked via GitHub Releases · viewboost/releases/v1.0.0</div>
+                </div>
+              </div>
+              <div style={{textAlign:'right'}}>
+                <div style={{fontSize:36,fontWeight:800,color:'#4ade80'}}>{apkDownloads===null?'…':apkDownloads.toLocaleString()}</div>
+                <div style={{fontSize:11,color:'#64748b'}}>total downloads</div>
+                <a href="https://github.com/rkadel1488/viewboost/releases" target="_blank" rel="noreferrer"
+                  style={{fontSize:11,color:'#4ade80',textDecoration:'none',display:'flex',alignItems:'center',gap:4,justifyContent:'flex-end',marginTop:4}}>
+                  <ExtLink s={10} c="#4ade80"/> View on GitHub
+                </a>
+              </div>
+            </div>
+
             <div style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,.06)',borderRadius:14,padding:'20px 24px'}}>
               <h3 style={{fontSize:14,fontWeight:700,color:'#fff',marginBottom:16}}>Current Task Points</h3>
               <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12}}>
