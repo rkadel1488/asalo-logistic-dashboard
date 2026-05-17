@@ -591,91 +591,58 @@ function CampaignCard({ campaign, compact, actionLabel, onAction }) {
 }
 
 // ── Checkout Page ─────────────────────────────────────────────────────────────
-function CheckoutPage({ pkg, user, onUpdatePoints, onBack, onSuccess }) {
-  const [phase,setPhase]=useState('form');
-  const [name,setName]=useState(user.name||'');
-  const [email,setEmail]=useState(user.email||'');
-  const [card,setCard]=useState('');
-  const [expiry,setExpiry]=useState('');
-  const [cvv,setCvv]=useState('');
-  const [errors,setErrors]=useState({});
-  const [steps,setSteps]=useState([]);
+function CheckoutPage({ pkg, user, appConfig, onBack, onSuccess }) {
+  const [phase,    setPhase]    = useState('confirm'); // confirm | redirecting | pending
+  const [txnId,    setTxnId]    = useState('');
+  const [submitting,setSubmitting] = useState(false);
+  const [saved,    setSaved]    = useState(false);
 
-  function fmtCard(v){return v.replace(/\D/g,'').slice(0,16).replace(/(.{4})/g,'$1 ').trim();}
-  function fmtExpiry(v){const d=v.replace(/\D/g,'').slice(0,4);return d.length>=3?d.slice(0,2)+'/'+d.slice(2):d;}
-  function cardBrand(v){const n=v.replace(/\s/g,'');if(n.startsWith('4'))return'Visa';if(/^5[1-5]/.test(n))return'Mastercard';if(/^3[47]/.test(n))return'Amex';return'Card';}
-  function validate(){const e={};if(!name.trim())e.name='Full name is required';if(!email.includes('@'))e.email='Valid email required';if(card.replace(/\s/g,'').length<16)e.card='Enter a valid 16-digit card number';if(expiry.length<5)e.expiry='Enter expiry as MM/YY';if(cvv.length<3)e.cvv='Enter 3-digit CVV';return e;}
+  const payoneerLinks = appConfig?.payoneer_links || {};
+  const payoneerLink  = payoneerLinks[pkg.id] || '';
+  const payoneerEmail = payoneerLinks.email   || '';
 
-  async function handleSubmit(e) {
-    e.preventDefault();
-    const errs=validate(); if(Object.keys(errs).length){setErrors(errs);return;}
-    setErrors({}); setPhase('processing');
-    const msgs=['Validating card details…','Contacting payment gateway…','Authorising transaction…','Securing your purchase…','Adding points to your account…'];
-    msgs.forEach((msg,i)=>setTimeout(()=>setSteps(p=>[...p,msg]),i*500));
-    setTimeout(async()=>{
-      const newPts=user.points+pkg.pts;
-      // Save purchase record + update balance in parallel
-      await Promise.all([
-        supa.from('profiles').update({ points: newPts }).eq('id', user.id),
-        supa.from('purchases').insert({
-          user_id: user.id, package_id: pkg.id, package_name: pkg.name,
-          pts: pkg.pts, price: pkg.price,
-        }),
-      ]).catch(()=>{});
-      onUpdatePoints(newPts);
-      setPhase('success');
-    },msgs.length*500+400);
+  async function handleProceed() {
+    // Save pending payment order to Supabase
+    setSubmitting(true);
+    await supa.from('payment_orders').insert({
+      user_id:      user.id,
+      package_id:   pkg.id,
+      package_name: pkg.name,
+      pts:          pkg.pts,
+      amount:       pkg.price,
+      status:       'pending',
+    }).catch(()=>{});
+    setSubmitting(false);
+
+    if(payoneerLink) {
+      // Open Payoneer payment page
+      window.open(payoneerLink, '_blank');
+    }
+    setPhase('pending');
   }
 
-  const iStyle=(f)=>({width:'100%',padding:'13px 16px',borderRadius:10,border:`1px solid ${errors[f]?'#ef4444':'rgba(255,255,255,.12)'}`,background:'#0d0d1f',color:'#fff',fontSize:14,outline:'none',fontFamily:'inherit'});
+  async function handleConfirmTxn(e) {
+    e.preventDefault();
+    if(!txnId.trim()) return;
+    setSubmitting(true);
+    // Update order with transaction ID
+    await supa.from('payment_orders')
+      .update({ payoneer_txn_id: txnId.trim() })
+      .eq('user_id', user.id)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .catch(()=>{});
+    setSubmitting(false);
+    setSaved(true);
+  }
 
-  if(phase==='success') return (
-    <div className="fade-in" style={{minHeight:'100vh',background:'#0f0f1a',display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
-      <div className="pop-in" style={{textAlign:'center',maxWidth:480}}>
-        <div style={{fontSize:72,marginBottom:8,lineHeight:1}}>🎉</div>
-        <div style={{display:'flex',justifyContent:'center',gap:6,marginBottom:24,flexWrap:'wrap',fontSize:22}}>
-          {['🎊','✨','💫','⭐','🌟'].map((e,i)=><span key={i} style={{animation:`confetti ${0.8+i*0.15}s ease forwards`,display:'inline-block'}}>{e}</span>)}
-        </div>
-        <h1 style={{fontSize:34,fontWeight:800,color:'#4ade80',marginBottom:8,letterSpacing:'-0.5px'}}>Purchase Complete!</h1>
-        <p style={{fontSize:16,color:'#94a3b8',marginBottom:24}}>Your <strong style={{color:'#fff'}}>{pkg.name} Pack</strong> has been activated successfully.</p>
-        <div style={{display:'inline-flex',alignItems:'center',gap:12,background:'linear-gradient(135deg,#1e1140,#0f1a1a)',border:'1px solid rgba(74,222,128,.3)',borderRadius:16,padding:'20px 32px',marginBottom:28,boxShadow:'0 0 40px rgba(74,222,128,.15)'}}>
-          <Coins s={32} c="#f59e0b"/>
-          <div style={{textAlign:'left'}}>
-            <div style={{fontSize:36,fontWeight:800,color:'#f59e0b',lineHeight:1}}>+{pkg.pts.toLocaleString()}</div>
-            <div style={{fontSize:13,color:'#64748b',marginTop:3}}>points added to your account</div>
-          </div>
-        </div>
-        <div style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,.07)',borderRadius:12,padding:'16px 20px',marginBottom:28,textAlign:'left'}}>
-          <div style={{fontSize:11,color:'#64748b',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:10}}>Order Summary</div>
-          <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}><span style={{fontSize:13,color:'#94a3b8'}}>Package</span><span style={{fontSize:13,color:'#fff',fontWeight:600}}>{pkg.name} Pack</span></div>
-          <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}><span style={{fontSize:13,color:'#94a3b8'}}>Points</span><span style={{fontSize:13,color:'#f59e0b',fontWeight:700}}>{pkg.pts.toLocaleString()} pts</span></div>
-          <div style={{borderTop:'1px solid rgba(255,255,255,.06)',marginTop:8,paddingTop:8,display:'flex',justifyContent:'space-between'}}><span style={{fontSize:14,color:'#fff',fontWeight:700}}>Total</span><span style={{fontSize:14,color:'#4ade80',fontWeight:800}}>${pkg.price}</span></div>
-        </div>
-        <div style={{display:'flex',gap:12,justifyContent:'center',flexWrap:'wrap'}}>
-          <button onClick={onSuccess} style={{padding:'14px 32px',borderRadius:12,border:'none',background:'linear-gradient(135deg,#a855f7,#7c3aed)',color:'#fff',fontWeight:700,fontSize:15,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 0 24px rgba(168,85,247,.4)'}}>🚀 Start Promoting</button>
-          <button onClick={onBack} style={{padding:'14px 24px',borderRadius:12,border:'1px solid rgba(255,255,255,.12)',background:'transparent',color:'#94a3b8',fontWeight:600,fontSize:14,cursor:'pointer',fontFamily:'inherit'}}>Back to Discover</button>
-        </div>
-      </div>
-    </div>
-  );
-
-  if(phase==='processing') return (
-    <div className="fade-in" style={{minHeight:'100vh',background:'#0f0f1a',display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
-      <div style={{textAlign:'center',maxWidth:380}}>
-        <div style={{width:72,height:72,border:'4px solid rgba(168,85,247,.2)',borderTopColor:'#a855f7',borderRadius:'50%',animation:'spin .8s linear infinite',margin:'0 auto 24px'}}/>
-        <h2 style={{fontSize:22,fontWeight:800,color:'#fff',marginBottom:8}}>Processing Payment</h2>
-        <p style={{fontSize:13,color:'#64748b',marginBottom:28}}>Please wait…</p>
-        <div style={{display:'flex',flexDirection:'column',gap:10,textAlign:'left'}}>
-          {steps.map((s,i)=><div key={i} className="fade-up" style={{display:'flex',alignItems:'center',gap:10,background:'#1a1a2e',borderRadius:9,padding:'10px 14px',border:'1px solid rgba(255,255,255,.06)'}}><Check s={14} c="#4ade80"/><span style={{fontSize:13,color:'#94a3b8'}}>{s}</span></div>)}
-        </div>
-      </div>
-    </div>
-  );
-
-  return (
+  // ── Confirm screen ────────────────────────────────────────────────────────
+  if(phase === 'confirm') return (
     <div className="fade-in" style={{minHeight:'100vh',background:'#0f0f1a',color:'#fff'}}>
+      {/* Header */}
       <div style={{background:'#13132a',borderBottom:'1px solid rgba(255,255,255,.08)',padding:'0 24px'}}>
-        <div style={{maxWidth:960,margin:'0 auto',height:62,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+        <div style={{maxWidth:780,margin:'0 auto',height:62,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
           <button onClick={onBack} style={{display:'flex',alignItems:'center',gap:7,background:'transparent',border:'none',color:'#94a3b8',cursor:'pointer',fontFamily:'inherit',fontSize:14,fontWeight:600}}
             onMouseEnter={e=>e.currentTarget.style.color='#fff'} onMouseLeave={e=>e.currentTarget.style.color='#94a3b8'}>
             <ArrowL s={16} c="currentColor"/> Back to Plans
@@ -683,62 +650,158 @@ function CheckoutPage({ pkg, user, onUpdatePoints, onBack, onSuccess }) {
           <div style={{display:'flex',alignItems:'center',gap:10}}>
             <div style={{width:28,height:28,borderRadius:7,background:'linear-gradient(135deg,#a855f7,#22d3ee)',display:'flex',alignItems:'center',justifyContent:'center'}}><Play s={13} c="#fff" fill="#fff"/></div>
             <span style={{fontWeight:800,fontSize:17,color:'#fff'}}>View<span style={{color:'#a855f7'}}>Boost</span></span>
-            <span style={{color:'#4b5563',fontSize:13,marginLeft:4}}>/ Checkout</span>
+            <span style={{color:'#4b5563',fontSize:13}}>/ Checkout</span>
           </div>
-          <div style={{fontSize:12,color:'#4ade80'}}>🔒 Secure Checkout</div>
+          <div style={{fontSize:12,color:'#4ade80'}}>🔒 Secure via Payoneer</div>
         </div>
       </div>
-      <div style={{maxWidth:900,margin:'0 auto',padding:'36px 20px 64px',display:'grid',gridTemplateColumns:'1fr 360px',gap:32,alignItems:'start'}}>
+
+      <div style={{maxWidth:780,margin:'0 auto',padding:'40px 20px',display:'grid',gridTemplateColumns:'1fr 320px',gap:28,alignItems:'start'}}>
+
+        {/* LEFT: Payment instructions */}
         <div>
-          <h2 style={{fontSize:22,fontWeight:800,color:'#fff',marginBottom:6}}>Billing Information</h2>
-          <p style={{fontSize:13,color:'#64748b',marginBottom:28}}>⚡ Demo mode — no real charge. Any card details accepted.</p>
-          <form onSubmit={handleSubmit} style={{display:'flex',flexDirection:'column',gap:20}}>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
-              <div><label style={{display:'block',fontSize:12,fontWeight:700,color:'#94a3b8',marginBottom:7,textTransform:'uppercase',letterSpacing:'0.05em'}}>Full Name</label><input className="checkout-input" value={name} onChange={e=>setName(e.target.value)} placeholder="John Smith" style={iStyle('name')}/>{errors.name&&<div style={{fontSize:11,color:'#ef4444',marginTop:5}}>⚠ {errors.name}</div>}</div>
-              <div><label style={{display:'block',fontSize:12,fontWeight:700,color:'#94a3b8',marginBottom:7,textTransform:'uppercase',letterSpacing:'0.05em'}}>Email</label><input className="checkout-input" type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com" style={iStyle('email')}/>{errors.email&&<div style={{fontSize:11,color:'#ef4444',marginTop:5}}>⚠ {errors.email}</div>}</div>
+          <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:24}}>
+            <img src="https://www.payoneer.com/wp-content/uploads/2021/01/Payoneer-logo.svg" alt="Payoneer" style={{height:28,filter:'brightness(0) invert(1)',opacity:.9}} onError={e=>e.target.style.display='none'}/>
+            <span style={{fontWeight:700,fontSize:18,color:'#fff'}}>Pay via Payoneer</span>
+          </div>
+
+          <div style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,.07)',borderRadius:14,padding:24,marginBottom:16}}>
+            <div style={{fontWeight:700,fontSize:15,color:'#fff',marginBottom:16,display:'flex',alignItems:'center',gap:8}}>
+              📋 How to complete your payment
             </div>
-            <div><label style={{display:'block',fontSize:12,fontWeight:700,color:'#94a3b8',marginBottom:7,textTransform:'uppercase',letterSpacing:'0.05em'}}>Card Number</label>
-              <div style={{position:'relative'}}><input className="checkout-input" value={card} onChange={e=>setCard(fmtCard(e.target.value))} placeholder="1234 5678 9012 3456" maxLength={19} style={{...iStyle('card'),paddingRight:80}}/><div style={{position:'absolute',right:14,top:'50%',transform:'translateY(-50%)',fontSize:12,color:'#64748b'}}>💳 {cardBrand(card)}</div></div>
-              {errors.card&&<div style={{fontSize:11,color:'#ef4444',marginTop:5}}>⚠ {errors.card}</div>}
-            </div>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
-              <div><label style={{display:'block',fontSize:12,fontWeight:700,color:'#94a3b8',marginBottom:7,textTransform:'uppercase',letterSpacing:'0.05em'}}>Expiry</label><input className="checkout-input" value={expiry} onChange={e=>setExpiry(fmtExpiry(e.target.value))} placeholder="MM/YY" maxLength={5} style={iStyle('expiry')}/>{errors.expiry&&<div style={{fontSize:11,color:'#ef4444',marginTop:5}}>⚠ {errors.expiry}</div>}</div>
-              <div><label style={{display:'block',fontSize:12,fontWeight:700,color:'#94a3b8',marginBottom:7,textTransform:'uppercase',letterSpacing:'0.05em'}}>CVV</label><input className="checkout-input" value={cvv} onChange={e=>setCvv(e.target.value.replace(/\D/g,'').slice(0,3))} placeholder="123" maxLength={3} style={iStyle('cvv')}/>{errors.cvv&&<div style={{fontSize:11,color:'#ef4444',marginTop:5}}>⚠ {errors.cvv}</div>}</div>
-            </div>
-            <button type="submit" style={{padding:'16px',borderRadius:13,border:'none',background:`linear-gradient(135deg,${pkg.accent},${pkg.accent}cc)`,color:'#fff',fontWeight:800,fontSize:17,cursor:'pointer',fontFamily:'inherit',boxShadow:`0 0 28px ${pkg.accent}44`,marginTop:4}}>
-              Complete Purchase — ${pkg.price}
-            </button>
-            <div style={{display:'flex',gap:20,flexWrap:'wrap',justifyContent:'center',paddingTop:4}}>
-              {['🔒 256-bit SSL','🛡️ Secure Payment','⚡ Instant Points','↩️ Cancel Anytime'].map(t=><span key={t} style={{fontSize:11,color:'#4b5563'}}>{t}</span>)}
-            </div>
-          </form>
-        </div>
-        <div style={{position:'sticky',top:24}}>
-          <div style={{background:'#1a1a2e',border:`1px solid ${pkg.accent}30`,borderRadius:16,overflow:'hidden'}}>
-            <div style={{background:`linear-gradient(135deg,${pkg.accent}18,${pkg.accent}08)`,padding:'20px 22px',borderBottom:`1px solid ${pkg.accent}20`}}>
-              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
-                <span style={{fontWeight:800,fontSize:18,color:'#fff'}}>{pkg.name} Pack</span>
-                {pkg.badge&&<span style={{background:pkg.accent,color:'#fff',fontSize:10,fontWeight:800,padding:'3px 10px',borderRadius:999}}>{pkg.badge}</span>}
-              </div>
-              <div style={{display:'flex',alignItems:'baseline',gap:6}}><span style={{fontSize:34,fontWeight:800,color:'#fff'}}>${pkg.price}</span><span style={{fontSize:13,color:'#64748b'}}>one-time</span></div>
-            </div>
-            <div style={{padding:'18px 22px'}}>
-              <div style={{display:'flex',alignItems:'center',gap:10,background:'#0f0f1a',borderRadius:10,padding:'12px 14px',marginBottom:16}}><Coins s={22} c="#f59e0b"/><div><div style={{fontWeight:800,fontSize:20,color:'#f59e0b'}}>{pkg.pts.toLocaleString()}</div><div style={{fontSize:11,color:'#64748b'}}>Points added instantly</div></div></div>
-              <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:18}}>{pkg.features.map(f=><div key={f} style={{display:'flex',alignItems:'center',gap:8,fontSize:13,color:'#94a3b8'}}><Check s={13} c={pkg.accent}/>{f}</div>)}</div>
-              <div style={{borderTop:'1px solid rgba(255,255,255,.06)',paddingTop:14,marginBottom:14}}>
-                <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}><span style={{fontSize:13,color:'#64748b'}}>Subtotal</span><span style={{fontSize:13,color:'#fff'}}>${pkg.price}</span></div>
-                <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}><span style={{fontSize:13,color:'#64748b'}}>Tax</span><span style={{fontSize:13,color:'#4ade80'}}>$0.00</span></div>
-                <div style={{display:'flex',justifyContent:'space-between',paddingTop:10,borderTop:'1px solid rgba(255,255,255,.06)'}}><span style={{fontSize:15,fontWeight:800,color:'#fff'}}>Total</span><span style={{fontSize:18,fontWeight:800,color:pkg.accent}}>${pkg.price}</span></div>
-              </div>
-              {[['🔒','SSL secured'],['⚡','Points delivered instantly'],['↩️','No recurring charges']].map(([ic,txt])=><div key={txt} style={{display:'flex',alignItems:'center',gap:8,fontSize:12,color:'#4b5563',marginBottom:6}}><span>{ic}</span>{txt}</div>)}
+            <div style={{display:'flex',flexDirection:'column',gap:14}}>
+              {[
+                {n:1, text:`Click "Pay with Payoneer" below`, sub:'You\'ll be redirected to the secure Payoneer payment page'},
+                {n:2, text:`Complete payment of $${pkg.price}`, sub:'Pay using your card, bank account, or Payoneer balance'},
+                {n:3, text:'Note your Transaction ID', sub:'Copy the reference number shown after successful payment'},
+                {n:4, text:'Return here and enter your Transaction ID', sub:'Your points will be credited within 24 hours after admin verification'},
+              ].map(s=>(
+                <div key={s.n} style={{display:'flex',gap:12}}>
+                  <div style={{width:26,height:26,borderRadius:999,background:'linear-gradient(135deg,#a855f7,#7c3aed)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,fontWeight:800,color:'#fff',flexShrink:0}}>{s.n}</div>
+                  <div>
+                    <div style={{fontWeight:600,fontSize:13,color:'#fff'}}>{s.text}</div>
+                    <div style={{fontSize:11,color:'#64748b',marginTop:2}}>{s.sub}</div>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
-          <div style={{marginTop:12,padding:'10px 14px',background:'rgba(245,158,11,.08)',border:'1px solid rgba(245,158,11,.2)',borderRadius:10,fontSize:11,color:'#92400e',textAlign:'center'}}>⚡ <strong style={{color:'#f59e0b'}}>Demo mode</strong> — no real charge. Any card details accepted.</div>
+
+          {payoneerEmail && (
+            <div style={{background:'rgba(168,85,247,.06)',border:'1px solid rgba(168,85,247,.2)',borderRadius:10,padding:'12px 16px',fontSize:12,color:'#94a3b8',marginBottom:16}}>
+              💡 You can also send payment directly to: <strong style={{color:'#a855f7'}}>{payoneerEmail}</strong><br/>
+              Reference: <strong style={{color:'#fff'}}>{pkg.name} — {user.email}</strong>
+            </div>
+          )}
+
+          {!payoneerLink && !payoneerEmail && (
+            <div style={{background:'rgba(245,158,11,.08)',border:'1px solid rgba(245,158,11,.2)',borderRadius:10,padding:'12px 16px',fontSize:12,color:'#f59e0b',marginBottom:16}}>
+              ⚙ Payment links not yet configured. Contact the admin to complete your purchase.
+            </div>
+          )}
+
+          <button onClick={handleProceed} disabled={submitting||(!payoneerLink&&!payoneerEmail)} style={{width:'100%',padding:'15px',borderRadius:12,border:'none',background:payoneerLink||payoneerEmail?'linear-gradient(135deg,#ff6b35,#f7b731)':'#1f2937',color:'#fff',fontWeight:800,fontSize:16,cursor:(payoneerLink||payoneerEmail)?'pointer':'not-allowed',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:10,boxShadow:(payoneerLink||payoneerEmail)?'0 0 28px rgba(255,107,53,.35)':'none',transition:'all .2s'}}>
+            {submitting ? <><div className="spinner" style={{width:16,height:16}}/> Setting up…</> : <>💳 Pay with Payoneer — ${pkg.price}</>}
+          </button>
+          <div style={{textAlign:'center',marginTop:10,fontSize:11,color:'#374151'}}>
+            Clicking this opens Payoneer's secure payment page in a new tab
+          </div>
+        </div>
+
+        {/* RIGHT: Order summary */}
+        <div style={{position:'sticky',top:24}}>
+          <div style={{background:'#1a1a2e',border:`1px solid ${pkg.accent}30`,borderRadius:16,overflow:'hidden'}}>
+            <div style={{background:`linear-gradient(135deg,${pkg.accent}18,${pkg.accent}08)`,padding:'18px 20px',borderBottom:`1px solid ${pkg.accent}20`}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}}>
+                <span style={{fontWeight:800,fontSize:17,color:'#fff'}}>{pkg.name} Pack</span>
+                {pkg.badge&&<span style={{background:pkg.accent,color:'#fff',fontSize:10,fontWeight:800,padding:'3px 10px',borderRadius:999}}>{pkg.badge}</span>}
+              </div>
+              <div style={{fontSize:30,fontWeight:800,color:'#fff'}}>${pkg.price} <span style={{fontSize:13,fontWeight:400,color:'#64748b'}}>one-time</span></div>
+            </div>
+            <div style={{padding:'16px 20px'}}>
+              <div style={{display:'flex',alignItems:'center',gap:10,background:'#0f0f1a',borderRadius:10,padding:'11px 14px',marginBottom:14}}>
+                <Coins s={20} c="#f59e0b"/>
+                <div><div style={{fontWeight:800,fontSize:18,color:'#f59e0b'}}>{pkg.pts.toLocaleString()}</div><div style={{fontSize:11,color:'#64748b'}}>Points added after verification</div></div>
+              </div>
+              <div style={{display:'flex',flexDirection:'column',gap:7,marginBottom:14}}>
+                {pkg.features.map(f=><div key={f} style={{display:'flex',alignItems:'center',gap:7,fontSize:12,color:'#94a3b8'}}><Check s={12} c={pkg.accent}/>{f}</div>)}
+              </div>
+              <div style={{borderTop:'1px solid rgba(255,255,255,.06)',paddingTop:12,display:'flex',justifyContent:'space-between'}}>
+                <span style={{fontSize:14,fontWeight:800,color:'#fff'}}>Total</span>
+                <span style={{fontSize:16,fontWeight:800,color:pkg.accent}}>${pkg.price}</span>
+              </div>
+              <div style={{marginTop:12,display:'flex',flexDirection:'column',gap:5}}>
+                {[['⏱','Points credited within 24h of payment'],['🔒','Secured by Payoneer'],['✅','Admin verified before crediting']].map(([ic,txt])=>(
+                  <div key={txt} style={{fontSize:11,color:'#4b5563',display:'flex',alignItems:'center',gap:6}}><span>{ic}</span>{txt}</div>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
   );
+
+  // ── Pending / confirmation screen ─────────────────────────────────────────
+  return (
+    <div className="fade-in" style={{minHeight:'100vh',background:'#0f0f1a',display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
+      <div style={{width:'100%',maxWidth:500,textAlign:'center'}}>
+        <div style={{fontSize:56,marginBottom:12}}>💳</div>
+        <h2 style={{fontSize:24,fontWeight:800,color:'#fff',marginBottom:8}}>
+          {saved ? '✅ Transaction ID Saved!' : 'Payment Initiated'}
+        </h2>
+        <p style={{fontSize:14,color:'#94a3b8',marginBottom:28,lineHeight:1.6}}>
+          {saved
+            ? `Your order is being reviewed. Points (${pkg.pts.toLocaleString()} pts) will be credited to your account within 24 hours.`
+            : `Complete your payment of $${pkg.price} on the Payoneer page, then enter your Transaction ID below.`}
+        </p>
+
+        {/* Order summary pill */}
+        <div style={{display:'inline-flex',alignItems:'center',gap:10,background:'#1a1a2e',border:`1px solid ${pkg.accent}30`,borderRadius:12,padding:'12px 20px',marginBottom:28}}>
+          <Coins s={18} c="#f59e0b"/>
+          <div style={{textAlign:'left'}}>
+            <div style={{fontWeight:800,fontSize:16,color:'#f59e0b'}}>{pkg.pts.toLocaleString()} pts</div>
+            <div style={{fontSize:11,color:'#64748b'}}>{pkg.name} Pack — ${pkg.price}</div>
+          </div>
+        </div>
+
+        {!saved && (
+          <div style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,.07)',borderRadius:14,padding:24,marginBottom:20,textAlign:'left'}}>
+            <div style={{fontWeight:700,fontSize:14,color:'#fff',marginBottom:4}}>Enter your Payoneer Transaction ID</div>
+            <div style={{fontSize:12,color:'#64748b',marginBottom:14}}>Found in your Payoneer email receipt or dashboard under "Activity"</div>
+            <form onSubmit={handleConfirmTxn} style={{display:'flex',gap:10}}>
+              <input value={txnId} onChange={e=>setTxnId(e.target.value)} placeholder="e.g. PAY-123456789"
+                style={{flex:1,padding:'11px 14px',borderRadius:9,border:'1px solid rgba(255,255,255,.12)',background:'#0d0d1f',color:'#fff',fontSize:13,outline:'none',fontFamily:'inherit'}}/>
+              <button type="submit" disabled={!txnId.trim()||submitting} style={{padding:'11px 18px',borderRadius:9,border:'none',background:'linear-gradient(135deg,#a855f7,#7c3aed)',color:'#fff',fontWeight:700,fontSize:13,cursor:txnId.trim()?'pointer':'not-allowed',fontFamily:'inherit',display:'flex',alignItems:'center',gap:6}}>
+                {submitting?<div className="spinner" style={{width:12,height:12}}/>:null} Submit
+              </button>
+            </form>
+          </div>
+        )}
+
+        {payoneerLink && !saved && (
+          <div style={{marginBottom:16}}>
+            <a href={payoneerLink} target="_blank" rel="noreferrer" style={{display:'inline-flex',alignItems:'center',gap:8,padding:'11px 22px',borderRadius:10,border:'1px solid rgba(255,107,53,.4)',background:'rgba(255,107,53,.08)',color:'#ff6b35',fontWeight:700,fontSize:13,textDecoration:'none'}}>
+              💳 Open Payoneer Payment Page
+            </a>
+          </div>
+        )}
+
+        <div style={{display:'flex',gap:12,justifyContent:'center',flexWrap:'wrap'}}>
+          {saved
+            ? <button onClick={onSuccess} style={{padding:'13px 28px',borderRadius:12,border:'none',background:'linear-gradient(135deg,#a855f7,#7c3aed)',color:'#fff',fontWeight:700,fontSize:14,cursor:'pointer',fontFamily:'inherit'}}>Back to App</button>
+            : <button onClick={onBack} style={{padding:'11px 22px',borderRadius:10,border:'1px solid rgba(255,255,255,.12)',background:'transparent',color:'#94a3b8',fontWeight:600,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}>← Back to Plans</button>}
+        </div>
+
+        <p style={{fontSize:11,color:'#374151',marginTop:16}}>
+          Questions? Contact support — your order reference: {user.email} · {pkg.name}
+        </p>
+      </div>
+    </div>
+  );
 }
+
+
 
 // ── Discover Tab ──────────────────────────────────────────────────────────────
 function DiscoverTab({ user, campaigns, setActiveTab, setActiveTask, onCheckout }) {
@@ -1626,8 +1689,9 @@ function DashboardTab({ user, setUser, campaigns, onClaimBonus }) {
 // ── Admin Panel ───────────────────────────────────────────────────────────────
 function AdminPanel({ user, appConfig, onConfigChange, onClose }) {
   const [activeTab, setActiveTab] = useState('overview');
-  const [allUsers,  setAllUsers]  = useState(null);
-  const [allCamps,  setAllCamps]  = useState(null);
+  const [allUsers,    setAllUsers]    = useState(null);
+  const [allCamps,    setAllCamps]    = useState(null);
+  const [allPayments, setAllPayments] = useState(null);
   const [saving,    setSaving]    = useState('');
   const [saved,     setSaved]     = useState('');
 
@@ -1640,11 +1704,15 @@ function AdminPanel({ user, appConfig, onConfigChange, onClose }) {
     bonus_monthly:  appConfig.bonus_monthly  || {enabled:true,pts:1500,interval_days:30},
     bonus_vip:      appConfig.bonus_vip      || {enabled:false,pts:500},
     bonus_birthday: appConfig.bonus_birthday || {enabled:false,pts:1000},
+    payoneer_links: appConfig.payoneer_links   || {starter:'',growth:'',pro:'',creator:'',email:''},
   }));
 
   useEffect(()=>{
     if(activeTab==='users')     fetchLeaderboard().then(setAllUsers);
     if(activeTab==='campaigns') fetchCampaigns().then(setAllCamps);
+    if(activeTab==='payments') {
+      supa.from('payment_orders').select('*').order('created_at',{ascending:false}).then(({data})=>setAllPayments(data||[]));
+    }
   },[activeTab]);
 
   async function save(key) {
@@ -1730,7 +1798,7 @@ function AdminPanel({ user, appConfig, onConfigChange, onClose }) {
       <div style={{maxWidth:1100,margin:'0 auto',padding:'28px 24px 64px'}}>
         {/* Tab bar */}
         <div style={{display:'flex',gap:8,marginBottom:24,flexWrap:'wrap'}}>
-          {[['overview','📊 Overview'],['points','⚡ Points'],['bonuses','🎁 Bonuses'],['users','👥 Users'],['campaigns','🚀 Campaigns']].map(([id,label])=>(
+          {[['overview','📊 Overview'],['points','⚡ Points'],['bonuses','🎁 Bonuses'],['payoneer','💳 Payoneer'],['payments','🧾 Payments'],['users','👥 Users'],['campaigns','🚀 Campaigns']].map(([id,label])=>(
             <button key={id} onClick={()=>setActiveTab(id)} style={tabStyle(id)}>{label}</button>
           ))}
         </div>
@@ -1912,6 +1980,84 @@ function AdminPanel({ user, appConfig, onConfigChange, onClose }) {
                       </div>
                     );
                   })}
+
+        {/* ── PAYONEER CONFIG ── */}
+        {activeTab==='payoneer'&&(
+          <div className="fade-up" style={{display:'flex',flexDirection:'column',gap:20}}>
+            <h2 style={{fontSize:20,fontWeight:800,color:'#fff'}}>Payoneer Payment Links</h2>
+            <p style={{fontSize:13,color:'#64748b'}}>Paste your Payoneer payment request links for each package. Users will be redirected to these when they purchase.</p>
+            <div style={{background:'rgba(255,107,53,.06)',border:'1px solid rgba(255,107,53,.2)',borderRadius:12,padding:'14px 18px',fontSize:12,color:'#ff6b35',marginBottom:4}}>
+              💡 To get your payment links: Log in to Payoneer → <strong>Activity → Billing Service → Create Payment Request</strong> → set the amount → copy the link
+            </div>
+            {sectionCard(<>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:4}}>
+                <div><div style={{fontSize:15,fontWeight:700,color:'#fff'}}>Your Payoneer Email / Username</div><div style={{fontSize:12,color:'#64748b'}}>Shown to users as alternative payment method</div></div>
+                <SaveBtn k="payoneer_links"/>
+              </div>
+              <input value={cfg.payoneer_links?.email||''} onChange={e=>setCfg(c=>({...c,payoneer_links:{...c.payoneer_links,email:e.target.value}}))}
+                placeholder="your@payoneer-email.com or Payoneer username"
+                style={{width:'100%',padding:'10px 14px',borderRadius:9,border:'1px solid rgba(255,255,255,.1)',background:'#0f0f1a',color:'#fff',fontSize:13,outline:'none',fontFamily:'inherit'}}/>
+              {[['starter','Starter — $0.99'],['growth','Growth — $1.99'],['pro','Pro — $5.99'],['creator','Creator — $9.99']].map(([k,label])=>(
+                <div key={k}>
+                  <div style={{fontSize:12,fontWeight:600,color:'#94a3b8',marginBottom:5}}>{label} payment link</div>
+                  <input value={cfg.payoneer_links?.[k]||''} onChange={e=>setCfg(c=>({...c,payoneer_links:{...c.payoneer_links,[k]:e.target.value}}))}
+                    placeholder="https://login.payoneer.com/page/billing/..."
+                    style={{width:'100%',padding:'10px 14px',borderRadius:9,border:`1px solid ${cfg.payoneer_links?.[k]?'rgba(74,222,128,.3)':'rgba(255,255,255,.1)'}`,background:'#0f0f1a',color:'#fff',fontSize:12,outline:'none',fontFamily:'inherit'}}/>
+                </div>
+              ))}
+            </>)}
+          </div>
+        )}
+
+        {/* ── PAYMENTS ── */}
+        {activeTab==='payments'&&(
+          <div className="fade-up" style={{display:'flex',flexDirection:'column',gap:16}}>
+            <h2 style={{fontSize:20,fontWeight:800,color:'#fff'}}>Payment Orders <span style={{fontSize:13,fontWeight:400,color:'#64748b'}}>({allPayments?.length||0} total)</span></h2>
+            <p style={{fontSize:13,color:'#64748b'}}>Review and approve pending Payoneer payments. Approving credits the user's points automatically.</p>
+            {!allPayments
+              ? <div style={{display:'flex',alignItems:'center',gap:8,color:'#4b5563',padding:'32px',justifyContent:'center'}}><div className="spinner" style={{width:16,height:16}}/> Loading orders…</div>
+              : allPayments.length===0
+                ? <div style={{textAlign:'center',padding:'40px',color:'#374151',background:'#1a1a2e',borderRadius:12}}>No payment orders yet.</div>
+                : <div style={{display:'flex',flexDirection:'column',gap:10}}>
+                    {allPayments.map(p=>(
+                      <div key={p.id} style={{background:'#1a1a2e',border:`1px solid ${p.status==='approved'?'rgba(74,222,128,.2)':p.status==='rejected'?'rgba(248,113,113,.2)':'rgba(255,255,255,.06)'}`,borderRadius:12,padding:'16px 18px'}}>
+                        <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:12,flexWrap:'wrap'}}>
+                          <div>
+                            <div style={{fontWeight:700,fontSize:14,color:'#fff',marginBottom:3}}>{p.package_name} Pack — ${p.amount}</div>
+                            <div style={{fontSize:12,color:'#64748b',marginBottom:4}}>{fmtDate(p.created_at)} {fmtTime(p.created_at)}</div>
+                            {p.payoneer_txn_id&&<div style={{fontSize:12,color:'#22d3ee'}}>Transaction ID: {p.payoneer_txn_id}</div>}
+                            {p.admin_note&&<div style={{fontSize:11,color:'#94a3b8',marginTop:3}}>Note: {p.admin_note}</div>}
+                          </div>
+                          <div style={{display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
+                            <span style={{fontWeight:800,fontSize:13,color:'#f59e0b'}}>+{(p.pts||0).toLocaleString()} pts</span>
+                            <span style={{background:p.status==='approved'?'rgba(74,222,128,.15)':p.status==='rejected'?'rgba(248,113,113,.15)':'rgba(245,158,11,.15)',color:p.status==='approved'?'#4ade80':p.status==='rejected'?'#f87171':'#f59e0b',border:`1px solid ${p.status==='approved'?'rgba(74,222,128,.3)':p.status==='rejected'?'rgba(248,113,113,.3)':'rgba(245,158,11,.3)'}`,borderRadius:999,padding:'2px 10px',fontSize:11,fontWeight:700}}>
+                              {p.status==='approved'?'✓ Approved':p.status==='rejected'?'✗ Rejected':'⏳ Pending'}
+                            </span>
+                          </div>
+                        </div>
+                        {p.status==='pending'&&(
+                          <div style={{display:'flex',gap:8,marginTop:12}}>
+                            <button onClick={async()=>{
+                              await supa.rpc('earn_points',{uid:p.user_id,amount:p.pts});
+                              await supa.from('payment_orders').update({status:'approved',reviewed_at:new Date().toISOString(),reviewed_by:user.id}).eq('id',p.id);
+                              await supa.from('purchases').insert({user_id:p.user_id,package_id:p.package_id,package_name:p.package_name,pts:p.pts,price:p.amount});
+                              setAllPayments(prev=>prev.map(x=>x.id===p.id?{...x,status:'approved'}:x));
+                            }} style={{flex:1,padding:'8px',borderRadius:8,border:'none',background:'linear-gradient(135deg,#16a34a,#15803d)',color:'#fff',fontWeight:700,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>
+                              ✓ Approve & Credit {p.pts} pts
+                            </button>
+                            <button onClick={async()=>{
+                              await supa.from('payment_orders').update({status:'rejected',reviewed_at:new Date().toISOString(),reviewed_by:user.id}).eq('id',p.id);
+                              setAllPayments(prev=>prev.map(x=>x.id===p.id?{...x,status:'rejected'}:x));
+                            }} style={{padding:'8px 14px',borderRadius:8,border:'1px solid rgba(248,113,113,.3)',background:'rgba(248,113,113,.08)',color:'#f87171',fontWeight:700,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>
+                              ✗ Reject
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>}
+          </div>
+        )}
                 </div>}
           </div>
         )}
@@ -2087,10 +2233,9 @@ function App() {
   }
 
   if(checkout) return (
-    <CheckoutPage pkg={checkout} user={user}
-      onUpdatePoints={pts=>setUser(u=>({...u,points:pts}))}
+    <CheckoutPage pkg={checkout} user={user} appConfig={appConfig}
       onBack={()=>setCheckout(null)}
-      onSuccess={()=>{ setCheckout(null); setTab('promote'); }}
+      onSuccess={()=>{ setCheckout(null); setTab('discover'); }}
     />
   );
 
