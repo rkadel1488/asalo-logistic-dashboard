@@ -163,6 +163,28 @@ async function postCommentToYouTube(videoId, commentText) {
   return data;
 }
 
+// ── App Config ────────────────────────────────────────────────────────────────
+async function fetchAppConfig() {
+  const { data } = await supa.from('app_config').select('key,value');
+  const cfg = {};
+  (data||[]).forEach(r => { cfg[r.key] = r.value; });
+  return cfg;
+}
+async function saveAppConfig(key, value, userId) {
+  await supa.from('app_config').upsert({ key, value, updated_by: userId, updated_at: new Date().toISOString() });
+}
+
+// Build dynamic TASK_DEFS from config (falls back to defaults)
+function buildTaskDefs(cfg) {
+  const pts   = cfg?.task_points || { watch:50, subscribe:75, comment:100 };
+  const costs = cfg?.task_costs  || { watch:5,  subscribe:8,  comment:12  };
+  return {
+    watch:     { label:'Watch',             emoji:'👁️', pts:pts.watch,     costPerView:costs.watch,     accent:'#22d3ee', desc:'Watch the video for the required duration' },
+    subscribe: { label:'Watch + Subscribe', emoji:'🔔', pts:pts.subscribe, costPerView:costs.subscribe, accent:'#a855f7', desc:'Watch & subscribe to the creator\'s channel' },
+    comment:   { label:'Watch + Comment',   emoji:'💬', pts:pts.comment,   costPerView:costs.comment,   accent:'#f59e0b', desc:'Watch & leave a genuine comment on the video' },
+  };
+}
+
 // ── Change Password ───────────────────────────────────────────────────────────
 async function changePasswordAPI(newPassword) {
   const stored = localStorage.getItem(`sb-rqinoynbezufokewlwny-auth-token`);
@@ -1518,8 +1540,306 @@ function DashboardTab({ user, setUser, campaigns, onClaimBonus }) {
 }
 
 
+// ── Admin Panel ───────────────────────────────────────────────────────────────
+function AdminPanel({ user, appConfig, onConfigChange, onClose }) {
+  const [activeTab, setActiveTab] = useState('overview');
+  const [allUsers,  setAllUsers]  = useState(null);
+  const [allCamps,  setAllCamps]  = useState(null);
+  const [saving,    setSaving]    = useState('');
+  const [saved,     setSaved]     = useState('');
+
+  // Local editable config state
+  const [cfg, setCfg] = useState(() => ({
+    task_points:    appConfig.task_points    || {watch:50,subscribe:75,comment:100},
+    task_costs:     appConfig.task_costs     || {watch:5,subscribe:8,comment:12},
+    signup_bonus:   appConfig.signup_bonus   || {pts:2000},
+    bonus_weekly:   appConfig.bonus_weekly   || {enabled:true,pts:350,interval_days:7},
+    bonus_monthly:  appConfig.bonus_monthly  || {enabled:true,pts:1500,interval_days:30},
+    bonus_vip:      appConfig.bonus_vip      || {enabled:false,pts:500},
+    bonus_birthday: appConfig.bonus_birthday || {enabled:false,pts:1000},
+  }));
+
+  useEffect(()=>{
+    if(activeTab==='users')     fetchLeaderboard().then(setAllUsers);
+    if(activeTab==='campaigns') fetchCampaigns().then(setAllCamps);
+  },[activeTab]);
+
+  async function save(key) {
+    setSaving(key);
+    try {
+      await saveAppConfig(key, cfg[key], user.id);
+      onConfigChange(key, cfg[key]);
+      setSaved(key); setTimeout(()=>setSaved(''),2000);
+    } catch(e) { alert('Save failed: '+e.message); }
+    finally { setSaving(''); }
+  }
+
+  async function toggleAdmin(uid, current) {
+    await supa.from('profiles').update({ is_admin: !current }).eq('id', uid);
+    setAllUsers(prev=>prev.map(u=>u.id===uid?{...u,is_admin:!current}:u));
+  }
+
+  async function deleteCampaign(id) {
+    if(!confirm('Delete this campaign?')) return;
+    await supa.from('campaigns').delete().eq('id', id);
+    setAllCamps(prev=>prev.filter(c=>c.id!==id));
+  }
+
+  const tabStyle = (id) => ({
+    padding:'8px 16px', borderRadius:8, border:'none', cursor:'pointer',
+    fontFamily:'inherit', fontWeight:600, fontSize:12, transition:'all .15s',
+    background: activeTab===id ? 'linear-gradient(135deg,#a855f7,#7c3aed)' : 'rgba(255,255,255,.05)',
+    color: activeTab===id ? '#fff' : '#94a3b8',
+    boxShadow: activeTab===id ? '0 0 14px rgba(168,85,247,.35)' : 'none',
+  });
+
+  const numInput = (val, onChange, min=0, max=10000) => (
+    <input type="number" value={val} min={min} max={max} onChange={e=>onChange(Number(e.target.value))}
+      style={{padding:'8px 12px',borderRadius:8,border:'1px solid rgba(255,255,255,.12)',background:'#0d0d1f',color:'#fff',fontSize:14,outline:'none',fontFamily:'inherit',width:100,textAlign:'center'}}/>
+  );
+
+  const SaveBtn = ({k}) => (
+    <button onClick={()=>save(k)} disabled={!!saving} style={{padding:'8px 18px',borderRadius:8,border:'none',background: saved===k?'linear-gradient(135deg,#16a34a,#15803d)':'linear-gradient(135deg,#a855f7,#7c3aed)',color:'#fff',fontWeight:700,fontSize:12,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:6}}>
+      {saving===k&&<div className="spinner" style={{width:11,height:11}}/>}
+      {saved===k ? '✓ Saved!' : saving===k ? 'Saving…' : 'Save'}
+    </button>
+  );
+
+  const Toggle = ({val, onChange}) => (
+    <div onClick={onChange} style={{width:44,height:24,borderRadius:999,background:val?'#a855f7':'#374151',cursor:'pointer',position:'relative',transition:'background .2s',flexShrink:0}}>
+      <div style={{position:'absolute',width:18,height:18,borderRadius:999,background:'#fff',top:3,left:val?23:3,transition:'left .2s',boxShadow:'0 1px 4px rgba(0,0,0,.3)'}}/>
+    </div>
+  );
+
+  const sectionCard = (children) => (
+    <div style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,.07)',borderRadius:14,padding:22,display:'flex',flexDirection:'column',gap:16}}>
+      {children}
+    </div>
+  );
+
+  const row = (label, sub, right) => (
+    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,flexWrap:'wrap'}}>
+      <div><div style={{fontSize:13,fontWeight:600,color:'#fff'}}>{label}</div>{sub&&<div style={{fontSize:11,color:'#64748b',marginTop:2}}>{sub}</div>}</div>
+      <div style={{display:'flex',alignItems:'center',gap:10}}>{right}</div>
+    </div>
+  );
+
+  return (
+    <div className="fade-in" style={{position:'fixed',inset:0,background:'#0a0a18',zIndex:3000,overflowY:'auto',color:'#fff'}}>
+      {/* Admin header */}
+      <div style={{background:'#13132a',borderBottom:'1px solid rgba(255,255,255,.08)',padding:'0 24px',position:'sticky',top:0,zIndex:10}}>
+        <div style={{maxWidth:1100,margin:'0 auto',height:60,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+          <div style={{display:'flex',alignItems:'center',gap:12}}>
+            <div style={{width:28,height:28,borderRadius:7,background:'linear-gradient(135deg,#a855f7,#22d3ee)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+              <Play s={13} c="#fff" fill="#fff"/>
+            </div>
+            <span style={{fontWeight:800,fontSize:16,color:'#fff'}}>ViewBoost</span>
+            <span style={{background:'rgba(168,85,247,.2)',color:'#a855f7',border:'1px solid rgba(168,85,247,.4)',borderRadius:6,padding:'2px 10px',fontSize:11,fontWeight:800}}>⚙ Admin</span>
+          </div>
+          <button onClick={onClose} style={{display:'flex',alignItems:'center',gap:6,background:'transparent',border:'1px solid rgba(255,255,255,.12)',borderRadius:8,padding:'7px 16px',color:'#94a3b8',cursor:'pointer',fontFamily:'inherit',fontSize:13,fontWeight:600}}
+            onMouseEnter={e=>{e.currentTarget.style.color='#fff';e.currentTarget.style.borderColor='rgba(255,255,255,.3)';}}
+            onMouseLeave={e=>{e.currentTarget.style.color='#94a3b8';e.currentTarget.style.borderColor='rgba(255,255,255,.12)';}}>
+            ← Back to App
+          </button>
+        </div>
+      </div>
+
+      <div style={{maxWidth:1100,margin:'0 auto',padding:'28px 24px 64px'}}>
+        {/* Tab bar */}
+        <div style={{display:'flex',gap:8,marginBottom:24,flexWrap:'wrap'}}>
+          {[['overview','📊 Overview'],['points','⚡ Points'],['bonuses','🎁 Bonuses'],['users','👥 Users'],['campaigns','🚀 Campaigns']].map(([id,label])=>(
+            <button key={id} onClick={()=>setActiveTab(id)} style={tabStyle(id)}>{label}</button>
+          ))}
+        </div>
+
+        {/* ── OVERVIEW ── */}
+        {activeTab==='overview'&&(
+          <div className="fade-up" style={{display:'flex',flexDirection:'column',gap:20}}>
+            <h2 style={{fontSize:20,fontWeight:800,color:'#fff'}}>Platform Overview</h2>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:12}}>
+              {[
+                {icon:'⚙',label:'Config Version',val:'Live',col:'#4ade80',sub:'Changes apply instantly'},
+                {icon:'🔑',label:'Admin User',val:user.name?.split(' ')[0]||'Admin',col:'#a855f7',sub:user.email},
+                {icon:'💰',label:'Signup Bonus',val:`${cfg.signup_bonus?.pts?.toLocaleString()} pts`,col:'#f59e0b',sub:'Awarded on registration'},
+                {icon:'📆',label:'Weekly Bonus',val:cfg.bonus_weekly?.enabled?`${cfg.bonus_weekly.pts} pts`:'Disabled',col:cfg.bonus_weekly?.enabled?'#22d3ee':'#374151',sub:`Every ${cfg.bonus_weekly?.interval_days} days`},
+                {icon:'📅',label:'Monthly Bonus',val:cfg.bonus_monthly?.enabled?`${cfg.bonus_monthly.pts} pts`:'Disabled',col:cfg.bonus_monthly?.enabled?'#a855f7':'#374151',sub:`Every ${cfg.bonus_monthly?.interval_days} days`},
+                {icon:'👑',label:'VIP Bonus',val:cfg.bonus_vip?.enabled?`${cfg.bonus_vip.pts} pts`:'Coming Soon',col:cfg.bonus_vip?.enabled?'#f59e0b':'#374151',sub:'Premium members'},
+              ].map(s=>(
+                <div key={s.label} style={{background:'#1a1a2e',border:`1px solid ${s.col}20`,borderRadius:12,padding:'16px'}}>
+                  <div style={{fontSize:22,marginBottom:6}}>{s.icon}</div>
+                  <div style={{fontSize:16,fontWeight:800,color:s.col,marginBottom:2}}>{s.val}</div>
+                  <div style={{fontSize:11,color:'#64748b',fontWeight:600}}>{s.label}</div>
+                  <div style={{fontSize:10,color:'#374151',marginTop:2}}>{s.sub}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,.06)',borderRadius:14,padding:'20px 24px'}}>
+              <h3 style={{fontSize:14,fontWeight:700,color:'#fff',marginBottom:16}}>Current Task Points</h3>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12}}>
+                {Object.entries(TASK_DEFS).map(([k,d])=>(
+                  <div key={k} style={{background:'#0f0f1a',borderRadius:10,padding:'14px',border:`1px solid ${d.accent}20`}}>
+                    <div style={{fontSize:20,marginBottom:4}}>{d.emoji}</div>
+                    <div style={{fontWeight:700,fontSize:13,color:'#fff',marginBottom:2}}>{d.label}</div>
+                    <div style={{fontSize:12,color:d.accent,fontWeight:700}}>Earn: {cfg.task_points?.[k]||d.pts} pts</div>
+                    <div style={{fontSize:11,color:'#64748b'}}>Cost: {cfg.task_costs?.[k]||d.costPerView} pts/view</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── POINTS CONFIG ── */}
+        {activeTab==='points'&&(
+          <div className="fade-up" style={{display:'flex',flexDirection:'column',gap:20}}>
+            <h2 style={{fontSize:20,fontWeight:800,color:'#fff'}}>Point Allocation</h2>
+            <p style={{fontSize:13,color:'#64748b'}}>Changes apply globally and immediately to all users.</p>
+
+            {sectionCard(<>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:4}}>
+                <div><div style={{fontSize:15,fontWeight:700,color:'#fff'}}>Task Earn Points</div><div style={{fontSize:12,color:'#64748b'}}>Points users receive for completing each task type</div></div>
+                <SaveBtn k="task_points"/>
+              </div>
+              {Object.entries({watch:'👁️ Watch',subscribe:'🔔 Watch + Subscribe',comment:'💬 Watch + Comment'}).map(([k,label])=>
+                row(label, `Currently ${cfg.task_points?.[k]} pts`,
+                  numInput(cfg.task_points?.[k]||50, v=>setCfg(c=>({...c,task_points:{...c.task_points,[k]:v}})), 1, 10000)
+                )
+              )}
+            </>)}
+
+            {sectionCard(<>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:4}}>
+                <div><div style={{fontSize:15,fontWeight:700,color:'#fff'}}>Cost Per View</div><div style={{fontSize:12,color:'#64748b'}}>Points deducted from promoter per view delivered</div></div>
+                <SaveBtn k="task_costs"/>
+              </div>
+              {Object.entries({watch:'👁️ Watch',subscribe:'🔔 Watch + Subscribe',comment:'💬 Watch + Comment'}).map(([k,label])=>
+                row(label, `Currently ${cfg.task_costs?.[k]} pts/view`,
+                  numInput(cfg.task_costs?.[k]||5, v=>setCfg(c=>({...c,task_costs:{...c.task_costs,[k]:v}})), 1, 1000)
+                )
+              )}
+            </>)}
+
+            {sectionCard(<>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:4}}>
+                <div><div style={{fontSize:15,fontWeight:700,color:'#fff'}}>Signup Bonus</div><div style={{fontSize:12,color:'#64748b'}}>Free points given to all new accounts on registration</div></div>
+                <SaveBtn k="signup_bonus"/>
+              </div>
+              {row('New User Bonus Points', `Currently ${cfg.signup_bonus?.pts?.toLocaleString()} pts`,
+                numInput(cfg.signup_bonus?.pts||2000, v=>setCfg(c=>({...c,signup_bonus:{pts:v}})), 0, 100000)
+              )}
+            </>)}
+          </div>
+        )}
+
+        {/* ── BONUSES CONFIG ── */}
+        {activeTab==='bonuses'&&(
+          <div className="fade-up" style={{display:'flex',flexDirection:'column',gap:20}}>
+            <h2 style={{fontSize:20,fontWeight:800,color:'#fff'}}>Bonus Settings</h2>
+            <p style={{fontSize:13,color:'#64748b'}}>Enable/disable bonuses and change their point values and intervals.</p>
+
+            {[
+              {k:'bonus_weekly',   icon:'📆', name:'Weekly Bonus',   col:'#22d3ee', hasInterval:true},
+              {k:'bonus_monthly',  icon:'📅', name:'Monthly Bonus',  col:'#a855f7', hasInterval:true},
+              {k:'bonus_vip',      icon:'👑', name:'VIP Bonus',      col:'#f59e0b', hasInterval:false},
+              {k:'bonus_birthday', icon:'🎂', name:'Birthday Bonus', col:'#f87171', hasInterval:false},
+            ].map(b=>sectionCard(<>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,flexWrap:'wrap'}}>
+                <div style={{display:'flex',alignItems:'center',gap:10}}>
+                  <span style={{fontSize:24}}>{b.icon}</span>
+                  <div>
+                    <div style={{fontSize:15,fontWeight:700,color:'#fff'}}>{b.name}</div>
+                    <div style={{fontSize:12,color: cfg[b.k]?.enabled?b.col:'#64748b'}}>{cfg[b.k]?.enabled?'Active':'Inactive'}</div>
+                  </div>
+                </div>
+                <div style={{display:'flex',alignItems:'center',gap:10}}>
+                  <Toggle val={cfg[b.k]?.enabled} onChange={()=>setCfg(c=>({...c,[b.k]:{...c[b.k],enabled:!c[b.k]?.enabled}}))}/>
+                  <SaveBtn k={b.k}/>
+                </div>
+              </div>
+              {row('Points Amount', `${cfg[b.k]?.pts} pts per claim`,
+                numInput(cfg[b.k]?.pts||350, v=>setCfg(c=>({...c,[b.k]:{...c[b.k],pts:v}})), 1, 100000)
+              )}
+              {b.hasInterval&&row('Reset Interval (days)', `Every ${cfg[b.k]?.interval_days} days`,
+                numInput(cfg[b.k]?.interval_days||7, v=>setCfg(c=>({...c,[b.k]:{...c[b.k],interval_days:v}})), 1, 365)
+              )}
+            </>))}
+          </div>
+        )}
+
+        {/* ── USERS ── */}
+        {activeTab==='users'&&(
+          <div className="fade-up" style={{display:'flex',flexDirection:'column',gap:16}}>
+            <h2 style={{fontSize:20,fontWeight:800,color:'#fff'}}>User Management <span style={{fontSize:13,fontWeight:400,color:'#64748b'}}>({allUsers?.length||0} total)</span></h2>
+            {!allUsers
+              ? <div style={{display:'flex',alignItems:'center',gap:8,color:'#4b5563',padding:'32px',justifyContent:'center'}}><div className="spinner" style={{width:16,height:16}}/> Loading users…</div>
+              : <div style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,.06)',borderRadius:14,overflow:'hidden'}}>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 110px 80px 80px 80px 80px',padding:'10px 16px',background:'rgba(255,255,255,.03)',borderBottom:'1px solid rgba(255,255,255,.06)',fontSize:11,fontWeight:700,color:'#4b5563',textTransform:'uppercase',letterSpacing:'0.05em'}}>
+                    <span>Member</span><span style={{textAlign:'right'}}>Balance</span><span style={{textAlign:'right'}}>Tasks</span><span style={{textAlign:'right'}}>Earned</span><span style={{textAlign:'center'}}>Admin</span><span style={{textAlign:'center'}}>Action</span>
+                  </div>
+                  {allUsers.map((u,i)=>(
+                    <div key={u.id} style={{display:'grid',gridTemplateColumns:'1fr 110px 80px 80px 80px 80px',padding:'11px 16px',borderBottom:i<allUsers.length-1?'1px solid rgba(255,255,255,.04)':'none',alignItems:'center',background:u.is_admin?'rgba(168,85,247,.05)':'transparent'}}>
+                      <div style={{display:'flex',alignItems:'center',gap:10}}>
+                        <div style={{width:30,height:30,borderRadius:999,background:`linear-gradient(135deg,${u.is_admin?'#a855f7':'#374151'},${u.is_admin?'#7c3aed':'#1f2937'})`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:800,color:'#fff',flexShrink:0}}>{initials(u.name)}</div>
+                        <div>
+                          <div style={{fontSize:13,fontWeight:600,color:'#fff',display:'flex',alignItems:'center',gap:6}}>{u.name}{u.id===user.id&&<span style={{fontSize:10,color:'#a855f7',fontWeight:700}}>(you)</span>}</div>
+                          <div style={{fontSize:10,color:'#4b5563'}}>{fmtDate(u.created_at)}</div>
+                        </div>
+                      </div>
+                      <div style={{textAlign:'right',fontWeight:700,fontSize:12,color:'#f59e0b'}}>{(u.points||0).toLocaleString()} pts</div>
+                      <div style={{textAlign:'right',fontSize:12,color:'#94a3b8'}}>{u.tasks_completed||0}</div>
+                      <div style={{textAlign:'right',fontSize:12,color:'#4ade80'}}>+{u.total_earned||0}</div>
+                      <div style={{display:'flex',justifyContent:'center'}}>
+                        <Toggle val={u.is_admin||false} onChange={()=>u.id!==user.id&&toggleAdmin(u.id,u.is_admin||false)}/>
+                      </div>
+                      <div style={{display:'flex',justifyContent:'center',fontSize:11,color:'#a855f7',fontWeight:700}}>{u.is_admin?'Admin':'—'}</div>
+                    </div>
+                  ))}
+                </div>}
+          </div>
+        )}
+
+        {/* ── CAMPAIGNS ── */}
+        {activeTab==='campaigns'&&(
+          <div className="fade-up" style={{display:'flex',flexDirection:'column',gap:16}}>
+            <h2 style={{fontSize:20,fontWeight:800,color:'#fff'}}>All Campaigns <span style={{fontSize:13,fontWeight:400,color:'#64748b'}}>({allCamps?.length||0} total)</span></h2>
+            {!allCamps
+              ? <div style={{display:'flex',alignItems:'center',gap:8,color:'#4b5563',padding:'32px',justifyContent:'center'}}><div className="spinner" style={{width:16,height:16}}/> Loading campaigns…</div>
+              : <div style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,.06)',borderRadius:14,overflow:'hidden'}}>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 100px 80px 80px 70px',padding:'10px 16px',background:'rgba(255,255,255,.03)',borderBottom:'1px solid rgba(255,255,255,.06)',fontSize:11,fontWeight:700,color:'#4b5563',textTransform:'uppercase',letterSpacing:'0.05em'}}>
+                    <span>Campaign</span><span style={{textAlign:'center'}}>Progress</span><span style={{textAlign:'center'}}>Views</span><span style={{textAlign:'center'}}>Type</span><span style={{textAlign:'center'}}>Action</span>
+                  </div>
+                  {allCamps.map((c,i)=>{
+                    const pct=Math.min(Math.round((c.delivered/c.target)*100),100);
+                    const d=TASK_DEFS[c.taskType]||TASK_DEFS.watch;
+                    return (
+                      <div key={c.id} style={{display:'grid',gridTemplateColumns:'1fr 100px 80px 80px 70px',padding:'11px 16px',borderBottom:i<allCamps.length-1?'1px solid rgba(255,255,255,.04)':'none',alignItems:'center'}}>
+                        <div>
+                          <div style={{fontWeight:700,fontSize:13,color:'#fff',marginBottom:1}}>{c.title}</div>
+                          <div style={{fontSize:10,color:'#4b5563'}}>{c.url.slice(0,40)}{c.url.length>40?'…':''}</div>
+                        </div>
+                        <div style={{padding:'0 8px'}}>
+                          <div style={{height:4,background:'#0f0f1a',borderRadius:999,overflow:'hidden',marginBottom:2}}><div style={{height:'100%',width:`${pct}%`,background:'linear-gradient(90deg,#a855f7,#22d3ee)',borderRadius:999}}/></div>
+                          <div style={{fontSize:10,color:'#64748b',textAlign:'center'}}>{pct}%</div>
+                        </div>
+                        <div style={{textAlign:'center',fontSize:12,color:'#94a3b8'}}>{c.delivered}/{c.target}</div>
+                        <div style={{display:'flex',justifyContent:'center'}}><TaskBadge taskType={c.taskType} sm/></div>
+                        <div style={{display:'flex',justifyContent:'center'}}>
+                          <button onClick={()=>deleteCampaign(c.id)} style={{padding:'4px 10px',borderRadius:6,border:'1px solid rgba(248,113,113,.3)',background:'rgba(248,113,113,.08)',color:'#f87171',fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>Delete</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
 // ── Footer ────────────────────────────────────────────────────────────────────
-function Footer({ onOpenPage }) {
+function Footer({ onOpenPage, isAdmin, onAdminClick }) {
   return (
     <footer style={{borderTop:'1px solid rgba(255,255,255,.06)',marginTop:48,padding:'24px 20px'}}>
       <div style={{maxWidth:960,margin:'0 auto',display:'flex',flexDirection:'column',alignItems:'center',gap:14}}>
@@ -1535,6 +1855,13 @@ function Footer({ onOpenPage }) {
               {i<arr.length-1&&<span style={{color:'#2d2d4e',fontSize:13}}>·</span>}
             </React.Fragment>
           ))}
+          {isAdmin&&<>
+            <span style={{color:'#2d2d4e',fontSize:13}}>·</span>
+            <button onClick={onAdminClick} style={{background:'none',border:'none',color:'#a855f7',fontSize:13,cursor:'pointer',fontFamily:'inherit',padding:'2px 4px',fontWeight:700,display:'flex',alignItems:'center',gap:4}}
+              onMouseEnter={e=>e.currentTarget.style.opacity='.7'} onMouseLeave={e=>e.currentTarget.style.opacity='1'}>
+              ⚙ Admin Dashboard
+            </button>
+          </>}
         </div>
         <div style={{display:'flex',alignItems:'center',gap:16,flexWrap:'wrap',justifyContent:'center'}}>
           <div style={{display:'flex',alignItems:'center',gap:6,background:'rgba(62,207,142,.06)',border:'1px solid rgba(62,207,142,.15)',borderRadius:7,padding:'4px 12px',fontSize:11,color:'#3ecf8e'}}>
@@ -1556,6 +1883,8 @@ function App() {
   const [task,       setTask]       = useState(null);
   const [checkout,   setCheckout]   = useState(null);
   const [footerPage, setFooterPage] = useState(null);
+  const [showAdmin,  setShowAdmin]  = useState(false);
+  const [appConfig,  setAppConfig]  = useState({});
 
   useEffect(()=>{
     let mounted=true;
@@ -1568,6 +1897,7 @@ function App() {
     async function init() {
       try {
         fetchCampaigns().then(data=>{ if(mounted) setCamps(data); }).catch(()=>{});
+        fetchAppConfig().then(cfg=>{ if(mounted) setAppConfig(cfg); }).catch(()=>{});
         // Use direct localStorage read — no network call, instant
         const authUser = await authGetSession();
         if(authUser && mounted){
@@ -1659,11 +1989,28 @@ function App() {
   if(initLoading) return <LoadingScreen/>;
   if(!user) return <LoginScreen onLogin={u=>{setUser(u);setTab('discover');}}/>;
 
+  // Build dynamic TASK_DEFS from live config
+  // (reassign global so all components use updated values)
+  if(Object.keys(appConfig).length) {
+    const dyn = buildTaskDefs(appConfig);
+    Object.assign(TASK_DEFS, dyn);
+  }
+
   if(checkout) return (
     <CheckoutPage pkg={checkout} user={user}
       onUpdatePoints={pts=>setUser(u=>({...u,points:pts}))}
       onBack={()=>setCheckout(null)}
       onSuccess={()=>{ setCheckout(null); setTab('promote'); }}
+    />
+  );
+
+  // Full-screen admin panel
+  if(showAdmin) return (
+    <AdminPanel
+      user={user}
+      appConfig={appConfig}
+      onConfigChange={(key,val)=>setAppConfig(c=>({...c,[key]:val}))}
+      onClose={()=>setShowAdmin(false)}
     />
   );
 
@@ -1686,7 +2033,7 @@ function App() {
           {tab==='dashboard' && <DashboardTab user={user} setUser={setUser} campaigns={camps} onClaimBonus={handleClaimBonus}/>}
         </div>
       </div>
-      <Footer onOpenPage={setFooterPage}/>
+      <Footer onOpenPage={setFooterPage} isAdmin={user?.is_admin} onAdminClick={()=>setShowAdmin(true)}/>
       {fp&&(
         <div className="fade-in" style={{position:'fixed',inset:0,background:'rgba(0,0,0,.75)',zIndex:2000,overflowY:'auto',padding:'24px 16px'}} onClick={e=>{if(e.target===e.currentTarget)setFooterPage(null);}}>
           <div className="fade-up" style={{maxWidth:680,margin:'0 auto',background:'#13132a',border:'1px solid rgba(255,255,255,.08)',borderRadius:18,overflow:'hidden'}}>
