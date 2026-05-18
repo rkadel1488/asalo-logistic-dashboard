@@ -284,8 +284,8 @@ function getRank(tasksCompleted) {
 const PLATFORMS = {
   youtube:   { name:'YouTube',   emoji:'▶',  color:'#ff0000', bg:'rgba(255,0,0,.12)',     active:true  },
   instagram: { name:'Instagram', emoji:'📸', color:'#e1306c', bg:'rgba(225,48,108,.12)',  active:true  },
-  tiktok:    { name:'TikTok',    emoji:'🎵', color:'#69c9d0', bg:'rgba(105,201,208,.12)', active:false },
-  facebook:  { name:'Facebook',  emoji:'👥', color:'#1877f2', bg:'rgba(24,119,242,.12)',  active:false },
+  tiktok:    { name:'TikTok',    emoji:'🎵', color:'#69c9d0', bg:'rgba(105,201,208,.12)', active:false, soon:'Q3 2026' },
+  facebook:  { name:'Facebook',  emoji:'👥', color:'#1877f2', bg:'rgba(24,119,242,.12)',  active:false, soon:'Q4 2026' },
 };
 
 // Platform-specific task labels
@@ -672,6 +672,16 @@ function Header({ user, onLogout, onLogoClick }) {
                 <div style={{padding:'4px 12px 8px',fontSize:11,color:'#4b5563',display:'flex',alignItems:'center',gap:5}}>
                   <span style={{width:6,height:6,borderRadius:'50%',background:'#4ade80',display:'inline-block'}}/> Saved to Supabase
                 </div>
+                <button onClick={()=>{
+                  const next=document.body.getAttribute('data-theme')==='light'?'dark':'light';
+                  document.body.setAttribute('data-theme',next);
+                  document.body.style.background=next==='light'?'#f8fafc':'#0f0f1a';
+                  document.body.style.color=next==='light'?'#0f172a':'#fff';
+                  localStorage.setItem('vb_theme',next);
+                  setOpen(false);
+                }} style={{width:'100%',padding:'8px 12px',borderRadius:8,border:'none',background:'transparent',color:'#94a3b8',fontSize:13,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:8,fontWeight:600}}>
+                  {document.body.getAttribute('data-theme')==='light'?'🌙 Dark Mode':'☀️ Light Mode'}
+                </button>
                 <button onClick={()=>{setOpen(false);onLogout();}} style={{width:'100%',padding:'8px 12px',borderRadius:8,border:'none',background:'transparent',color:'#f87171',fontSize:13,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:8,fontWeight:600}}>
                   <LogOut s={13} c="#f87171"/> Sign Out
                 </button>
@@ -966,7 +976,7 @@ function PlatformTabs({ selected, onChange }) {
             style={{display:'flex',alignItems:'center',gap:7,padding:'8px 16px',borderRadius:999,border:`1px solid ${active?p.color+'80':p.active?p.color+'30':'rgba(255,255,255,.06)'}`,background:active?p.bg:'transparent',color:active?p.color:p.active?'#94a3b8':'#374151',fontWeight:active?700:600,fontSize:13,cursor:p.active?'pointer':'not-allowed',fontFamily:'inherit',transition:'all .15s',position:'relative'}}>
             <span style={{fontSize:15}}>{p.emoji}</span>
             {p.name}
-            {!p.active&&<span style={{position:'absolute',top:-8,right:-4,background:'#374151',color:'#64748b',fontSize:9,fontWeight:800,padding:'1px 6px',borderRadius:999,whiteSpace:'nowrap'}}>SOON</span>}
+            {!p.active&&<span style={{position:'absolute',top:-8,right:-4,background:'#374151',color:'#64748b',fontSize:9,fontWeight:800,padding:'1px 6px',borderRadius:999,whiteSpace:'nowrap'}}>{p.soon||'SOON'}</span>}
           </button>
         );
       })}
@@ -1783,6 +1793,33 @@ ${link}`);
           )}
         </div>
       </div>
+
+      {/* Points History Mini Graph */}
+      {(history||[]).length>1&&(()=>{
+        const last14 = [...(history||[])].reverse().slice(-14);
+        const maxPts = Math.max(...last14.map(h=>h.pts),1);
+        const w=320, h_=60, pad=4;
+        const pts = last14.map((e,i)=>({
+          x: pad + (i/(last14.length-1||1))*(w-pad*2),
+          y: h_-pad - (e.pts/maxPts)*(h_-pad*2),
+          pts: e.pts, date: fmtDate(e.earned_at),
+        }));
+        const path = pts.map((p,i)=>`${i===0?'M':'L'}${p.x},${p.y}`).join(' ');
+        return (
+          <div style={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,.06)',borderRadius:12,padding:'14px 18px'}}>
+            <div style={{fontSize:12,fontWeight:700,color:'#94a3b8',marginBottom:8,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+              <span>📈 Points Earned (last {last14.length} tasks)</span>
+              <span style={{color:'#4ade80',fontWeight:800}}>+{last14.reduce((s,e)=>s+e.pts,0)} pts total</span>
+            </div>
+            <svg width="100%" viewBox={`0 0 ${w} ${h_}`} preserveAspectRatio="none" style={{display:'block'}}>
+              <defs><linearGradient id="pgGrad" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stopColor="#a855f7"/><stop offset="100%" stopColor="#22d3ee"/></linearGradient></defs>
+              <path d={`${path} L${pts[pts.length-1].x},${h_} L${pts[0].x},${h_} Z`} fill="url(#pgGrad)" fillOpacity=".12"/>
+              <path d={path} stroke="url(#pgGrad)" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+              {pts.map((p,i)=><circle key={i} cx={p.x} cy={p.y} r="3" fill="#a855f7"/>)}
+            </svg>
+          </div>
+        );
+      })()}
 
       {/* Earnings History */}
       <div>
