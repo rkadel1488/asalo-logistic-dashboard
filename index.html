@@ -133,10 +133,14 @@ let _ytToken       = null;
 
 function initYTAuth() {
   if (!GOOGLE_YT_CLIENT_ID || !window.google?.accounts?.oauth2) return;
+  if (_ytTokenClient) return; // already initialised
   _ytTokenClient = window.google.accounts.oauth2.initTokenClient({
     client_id: GOOGLE_YT_CLIENT_ID,
     scope: 'https://www.googleapis.com/auth/youtube.force-ssl',
     callback: () => {},
+    // Do NOT auto-prompt — only fire when user explicitly posts a comment
+    prompt: '',
+    hint: '',
   });
 }
 
@@ -154,7 +158,7 @@ function getYTToken() {
     };
     // If we have a valid token already, reuse it
     if (_ytToken) { resolve(_ytToken); return; }
-    _ytTokenClient.requestAccessToken({ prompt: '' });
+    _ytTokenClient.requestAccessToken({ prompt: 'consent' });
   });
 }
 
@@ -2106,11 +2110,7 @@ function App() {
       window.history.replaceState({}, '', window.location.pathname); // clean URL
     }
 
-    // Init Google YouTube auth when GIS script has loaded
-    const gisInterval = setInterval(()=>{
-      if(window.google?.accounts?.oauth2){ initYTAuth(); clearInterval(gisInterval); }
-    }, 500);
-    setTimeout(()=>clearInterval(gisInterval), 10000); // stop polling after 10s
+    // GIS is initialised lazily in getYTToken() only when posting a comment
 
 
     async function init() {
