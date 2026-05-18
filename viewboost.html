@@ -1062,6 +1062,7 @@ function EarnTab({ user, campaigns, onClaim, activeTask, setActiveTask }) {
 
   const [filter,   setFilter]   = useState('all');
   const [platform, setPlatform] = useState('youtube');
+  const [search,   setSearch]   = useState('');
 
   const canClaim=timerDone&&!claimed&&(activeTask?.taskType==='watch'?true:activeTask?.taskType==='subscribe'?subStep==='done':comment.trim().length>0);
 
@@ -1069,8 +1070,10 @@ function EarnTab({ user, campaigns, onClaim, activeTask, setActiveTask }) {
   const avail = campaigns.filter(c=>c.delivered<c.target && (c.platform||'youtube')===platform);
   const available      = avail.filter(c=>!watchedToday?.has(c.id));
   const onCooldown     = avail.filter(c=> watchedToday?.has(c.id));
-  const filtered       = filter==='all' ? available : available.filter(c=>c.taskType===filter);
-  const filteredCooldown = filter==='all' ? onCooldown : onCooldown.filter(c=>c.taskType===filter);
+  const byType     = filter==='all' ? available : available.filter(c=>c.taskType===filter);
+  const filtered   = search.trim() ? byType.filter(c=>c.title.toLowerCase().includes(search.toLowerCase())||c.url.toLowerCase().includes(search.toLowerCase())) : byType;
+  const byCoolType = filter==='all' ? onCooldown : onCooldown.filter(c=>c.taskType===filter);
+  const filteredCooldown = search.trim() ? byCoolType.filter(c=>c.title.toLowerCase().includes(search.toLowerCase())) : byCoolType;
   // pLabels: use activeTask platform when executing, otherwise use filter platform
   const pLabels = PLATFORM_LABELS[activeTask?.platform || platform] || PLATFORM_LABELS.youtube;
 
@@ -1095,9 +1098,17 @@ function EarnTab({ user, campaigns, onClaim, activeTask, setActiveTask }) {
     <div className="fade-up" style={{display:'flex',flexDirection:'column',gap:18}}>
 
       {/* Platform Tabs */}
-      <PlatformTabs selected={platform} onChange={p=>{setPlatform(p);setFilter('all');}}/>
+      <PlatformTabs selected={platform} onChange={p=>{setPlatform(p);setFilter('all');setSearch('');}}/>
 
-      {/* Header */}
+      {/* Search + Header */}
+      <div style={{position:'relative'}}>
+        <input type="text" value={search} onChange={e=>setSearch(e.target.value)}
+          placeholder="🔍  Search campaigns by title or URL…"
+          style={{width:'100%',padding:'11px 16px',borderRadius:10,border:'1px solid rgba(255,255,255,.1)',background:'#1a1a2e',color:'#fff',fontSize:13,outline:'none',fontFamily:'inherit',transition:'border-color .2s'}}
+          onFocus={e=>e.target.style.borderColor='rgba(168,85,247,.5)'}
+          onBlur={e=>e.target.style.borderColor='rgba(255,255,255,.1)'}/>
+        {search&&<button onClick={()=>setSearch('')} style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',color:'#64748b',cursor:'pointer',fontSize:16,padding:'0 4px'}}>✕</button>}
+      </div>
       <div>
         <h2 style={{fontSize:17,fontWeight:800,color:'#fff',marginBottom:4,display:'flex',alignItems:'center',gap:8}}>
           <span>{PLATFORMS[platform]?.emoji}</span> Choose a {PLATFORMS[platform]?.name} Task
