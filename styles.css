@@ -689,9 +689,9 @@ input, textarea, select { font-family: inherit; }
 
   .modal-bd { padding: 16px; padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
   .modal {
-    width: 100%;
+    width: 100% !important;
     max-width: 480px;
-    max-height: 100%;
+    max-height: 100% !important;
     overflow-y: auto;
     border-radius: 14px;
   }
