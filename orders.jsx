@@ -468,7 +468,9 @@ function OrderDrawer({ order, onClose, onAdvance, onSendCustom }) {
   const nextLabel = next && (window.ORDER_STATUSES.find(s => s.key === next) || {}).label;
 
   return (
-    <aside className="drawer">
+    <React.Fragment>
+      <div className="drawer-bd" onClick={onClose} />
+      <aside className="drawer">
       <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 10 }}>
         <span className="mono" style={{ fontWeight: 600 }}>{order.id}</span>
         <StatusPill status={order.status} />
@@ -569,7 +571,8 @@ function OrderDrawer({ order, onClose, onAdvance, onSendCustom }) {
           <button className="btn" disabled style={{ opacity: 0.6 }}>Order complete</button>
         )}
       </div>
-    </aside>
+      </aside>
+    </React.Fragment>
   );
 }
 
