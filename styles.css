@@ -198,6 +198,7 @@ input, textarea, select { font-family: inherit; }
   border-bottom: 1px solid var(--line);
   background: var(--bg-0);
 }
+.menu-btn { display: none; flex: none; }
 .sb-backdrop {
   position: fixed; inset: 0;
   background: oklch(0.10 0.01 250 / 0.55);
@@ -658,6 +659,7 @@ input, textarea, select { font-family: inherit; }
   .search { display: none; }
   .tb-pill { display: none; }
   .tb-sync, .tb-bell { display: none; }
+  .menu-btn { display: inline-flex; }
 
   .bottom-nav { display: flex; }
   .viewport { padding-bottom: calc(58px + env(safe-area-inset-bottom, 0px)); }

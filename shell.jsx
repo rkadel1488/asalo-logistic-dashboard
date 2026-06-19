@@ -61,10 +61,14 @@ function Sidebar({ active, onNav, open, onClose }) {
   );
 }
 
-function Topbar({ crumbs, onSyncing }) {
+function Topbar({ crumbs, onSyncing, onMenu }) {
   const [q, setQ] = React.useState("");
   return (
     <header className="topbar">
+      <button className="btn ghost sm menu-btn" onClick={onMenu} aria-label="Open menu">
+        <Icon name="menu" size={18} />
+      </button>
+
       <div className="crumb">
         {crumbs.map((c, i) => (
           <React.Fragment key={i}>
