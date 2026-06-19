@@ -463,6 +463,7 @@ function FleetScreen({ drivers, assignments, orders, onAddDriver, onToast }) {
   const [showAdd, setShowAdd] = React.useState(false);
   const [msgDriver, setMsgDriver] = React.useState(null);
   const [statusFilter, setStatusFilter] = React.useState("all");
+  const [selectedDriver, setSelectedDriver] = React.useState(null);
 
   const stMap = {
     on_route:  { lbl: "On route",  color: "var(--st-in_transit)" },
@@ -534,7 +535,7 @@ function FleetScreen({ drivers, assignments, orders, onAddDriver, onToast }) {
               const assignedOrder = assignedOrderId ? (orders || []).find(o => o.id === assignedOrderId) : null;
               const effStatus = effectiveStatus(d);
               return (
-                <tr key={d.id}>
+                <tr key={d.id} onClick={() => setSelectedDriver(d)} style={{ cursor: "pointer" }}>
                   {/* Driver */}
                   <td>
                     <div className="row" style={{ gap: 8 }}>
@@ -588,7 +589,7 @@ function FleetScreen({ drivers, assignments, orders, onAddDriver, onToast }) {
                   <td className="mono">{d.hours}</td>
 
                   {/* Contact actions */}
-                  <td>
+                  <td onClick={e => e.stopPropagation()}>
                     <div className="row" style={{ gap: 4 }}>
                       <a
                         href={`tel:${(d.phone || "").replace(/\s/g, "")}`}
@@ -619,6 +620,48 @@ function FleetScreen({ drivers, assignments, orders, onAddDriver, onToast }) {
 
       <AddDriverModal open={showAdd} onClose={() => setShowAdd(false)} onSave={d => { onAddDriver(d); setShowAdd(false); }} />
       <DriverMessageModal driver={msgDriver} onClose={() => setMsgDriver(null)} onSend={handleSend} />
+      {(() => {
+        const d = selectedDriver;
+        if (!d) return null;
+        const assignedOrderId = driverOrderMap[d.id];
+        const assignedOrder = assignedOrderId ? (orders || []).find(o => o.id === assignedOrderId) : null;
+        const effStatus = effectiveStatus(d);
+        return (
+          <DetailModal
+            open={!!d}
+            onClose={() => setSelectedDriver(null)}
+            icon="truck"
+            title={d.name}
+            subtitle={d.truck}
+            rows={[
+              { label: "Status", value: (
+                <span className="chip">
+                  <span className="dot" style={{ background: stMap[effStatus]?.color || "var(--fg-3)" }} />
+                  {stMap[effStatus]?.lbl || effStatus}
+                </span>
+              ) },
+              { label: "Phone", value: d.phone },
+              { label: "Load", value: `${Math.round((d.load || 0) * 100)}%` },
+              { label: "Hours of service", value: d.hours },
+              assignedOrder ? {
+                label: "Current assignment",
+                value: `${assignedOrder.id} · ${assignedOrder.origin} → ${assignedOrder.destination} · ETA ${assignedOrder.eta}`,
+                full: true,
+              } : { label: "Current assignment", value: d.route || "Unassigned", full: true },
+            ]}
+            actions={
+              <React.Fragment>
+                <a href={`tel:${(d.phone || "").replace(/\s/g, "")}`} className="btn ghost sm" style={{ textDecoration: "none" }}>
+                  <Icon name="phone" size={11} /> Call
+                </a>
+                <button className="btn primary sm" onClick={() => { setSelectedDriver(null); setMsgDriver(d); }}>
+                  <Icon name="sms" size={11} /> Message
+                </button>
+              </React.Fragment>
+            }
+          />
+        );
+      })()}
     </div>
   );
 }
