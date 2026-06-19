@@ -61,14 +61,10 @@ function Sidebar({ active, onNav, open, onClose }) {
   );
 }
 
-function Topbar({ crumbs, onSyncing, onMenu }) {
+function Topbar({ crumbs, onSyncing }) {
   const [q, setQ] = React.useState("");
   return (
     <header className="topbar">
-      <button className="btn ghost sm menu-btn" onClick={onMenu}>
-        <Icon name="menu" size={16} />
-      </button>
-
       <div className="crumb">
         {crumbs.map((c, i) => (
           <React.Fragment key={i}>
@@ -94,10 +90,10 @@ function Topbar({ crumbs, onSyncing, onMenu }) {
         <span className="dot" />
         TransVirtual API · synced 14s ago
       </span>
-      <button className="btn ghost sm" onClick={onSyncing}>
+      <button className="btn ghost sm tb-sync" onClick={onSyncing}>
         <Icon name="refresh" size={13} /> Sync
       </button>
-      <button className="btn sm">
+      <button className="btn sm tb-bell">
         <Icon name="bell" size={13} />
       </button>
       <div className="sb-avatar" style={{ width: 28, height: 28, fontSize: 11 }}>RM</div>
@@ -105,4 +101,34 @@ function Topbar({ crumbs, onSyncing, onMenu }) {
   );
 }
 
-Object.assign(window, { Sidebar, Topbar });
+const TABS = [
+  { key: "orders", label: "Orders", icon: "inbox" },
+  { key: "tracking", label: "Tracking", icon: "map" },
+  { key: "fleet", label: "Fleet", icon: "truck" },
+  { key: "notifications", label: "Alerts", icon: "bell" },
+];
+const TAB_KEYS = new Set(TABS.map((t) => t.key));
+
+function BottomNav({ active, onNav, onMore }) {
+  const moreActive = !TAB_KEYS.has(active);
+  return (
+    <nav className="bottom-nav">
+      {TABS.map((t) => (
+        <button
+          key={t.key}
+          className={`bn-item ${active === t.key ? "active" : ""}`}
+          onClick={() => onNav(t.key)}
+        >
+          <Icon name={t.icon} size={20} />
+          <span>{t.label}</span>
+        </button>
+      ))}
+      <button className={`bn-item ${moreActive ? "active" : ""}`} onClick={onMore}>
+        <Icon name="menu" size={20} />
+        <span>More</span>
+      </button>
+    </nav>
+  );
+}
+
+Object.assign(window, { Sidebar, Topbar, BottomNav });

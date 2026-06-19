@@ -1,0 +1,10 @@
+{
+  "name": "ASALO Logistic OS",
+  "short_name": "ASALO",
+  "description": "ASALO Logistic — operations dashboard",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#1f2128",
+  "theme_color": "#1f2128",
+  "orientation": "portrait-primary"
+}

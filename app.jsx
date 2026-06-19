@@ -100,7 +100,6 @@ function App() {
         <Topbar
           crumbs={crumbsByView[view] || ["Dashboard"]}
           onSyncing={() => pushToast({ ttl: "Synced with TransVirtual", sub: "1,284 events · 0 errors" })}
-          onMenu={() => setMobileNavOpen((o) => !o)}
         />
         <div className="viewport">
           {view === "orders" && (
@@ -128,6 +127,12 @@ function App() {
             />
           )}
         </div>
+
+        <BottomNav
+          active={view}
+          onNav={(v) => { setView(v); setSelectedId(null); }}
+          onMore={() => setMobileNavOpen(true)}
+        />
 
         {selected && view === "orders" && (
           <OrderDrawer
