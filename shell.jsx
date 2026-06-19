@@ -16,52 +16,59 @@ const NAV = [
   { key: "settings", label: "Settings", icon: "cog" },
 ];
 
-function Sidebar({ active, onNav }) {
+function Sidebar({ active, onNav, open, onClose }) {
   return (
-    <aside className="sidebar">
-      <div className="sb-brand">
-        <div className="sb-mark">A</div>
-        <div className="sb-name">
-          ASALO
-          <small>Logistic OS</small>
-        </div>
-      </div>
-
-      {NAV.map((n, i) =>
-        n.section ? (
-          <div key={`s${i}`} className="sb-section">{n.section}</div>
-        ) : (
-          <div key={n.key} className="sb-nav">
-            <button
-              className={`sb-item ${active === n.key ? "active" : ""}`}
-              onClick={() => onNav(n.key)}
-            >
-              <Icon name={n.icon} />
-              {n.label}
-              {n.badge && <span className="badge">{n.badge}</span>}
-            </button>
+    <React.Fragment>
+      {open && <div className="sb-backdrop" onClick={onClose} />}
+      <aside className={`sidebar ${open ? "open" : ""}`}>
+        <div className="sb-brand">
+          <div className="sb-mark">A</div>
+          <div className="sb-name">
+            ASALO
+            <small>Logistic OS</small>
           </div>
-        )
-      )}
-
-      <div className="sb-footer">
-        <div className="sb-user">
-          <div className="sb-avatar">RM</div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="sb-uname">Renato M.</div>
-            <div className="sb-urole">Ops Manager · Melbourne</div>
-          </div>
-          <Icon name="cog" size={14} />
         </div>
-      </div>
-    </aside>
+
+        {NAV.map((n, i) =>
+          n.section ? (
+            <div key={`s${i}`} className="sb-section">{n.section}</div>
+          ) : (
+            <div key={n.key} className="sb-nav">
+              <button
+                className={`sb-item ${active === n.key ? "active" : ""}`}
+                onClick={() => { onNav(n.key); onClose && onClose(); }}
+              >
+                <Icon name={n.icon} />
+                {n.label}
+                {n.badge && <span className="badge">{n.badge}</span>}
+              </button>
+            </div>
+          )
+        )}
+
+        <div className="sb-footer">
+          <div className="sb-user">
+            <div className="sb-avatar">RM</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="sb-uname">Renato M.</div>
+              <div className="sb-urole">Ops Manager · Melbourne</div>
+            </div>
+            <Icon name="cog" size={14} />
+          </div>
+        </div>
+      </aside>
+    </React.Fragment>
   );
 }
 
-function Topbar({ crumbs, onSyncing }) {
+function Topbar({ crumbs, onSyncing, onMenu }) {
   const [q, setQ] = React.useState("");
   return (
     <header className="topbar">
+      <button className="btn ghost sm menu-btn" onClick={onMenu}>
+        <Icon name="menu" size={16} />
+      </button>
+
       <div className="crumb">
         {crumbs.map((c, i) => (
           <React.Fragment key={i}>
