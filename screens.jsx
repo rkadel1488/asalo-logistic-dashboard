@@ -175,7 +175,7 @@ function TrackingScreen({ orders, drivers, assignments, onAssign, onRemove }) {
   }
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 14, height: "calc(100vh - 48px)", padding: 18 }}>
+    <div className="responsive-grid" style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 14, height: "calc(100vh - 48px)", padding: 18 }}>
 
       {/* ---- Leaflet map ---- */}
       <div style={{ position: "relative", borderRadius: 8, overflow: "hidden", border: "1px solid var(--line)" }}>
@@ -725,7 +725,7 @@ function NotificationsScreen({ log, onToast }) {
         <div className="kpi"><div className="lbl">Cost · 24h</div><div className="val">$16.72</div><div className="delta">$0.04 / msg avg</div></div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 14 }}>
+      <div className="responsive-grid" style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 14 }}>
 
         {/* SMS Log */}
         <div className="panel" style={{ overflow: "hidden" }}>
@@ -1017,7 +1017,7 @@ function ApiCredentialCard({ title, subtitle, defaultEndpoint, keyPlaceholder, f
 
 function ApiScreen({ onToast }) {
   return (
-    <div style={{ padding: 18, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+    <div className="responsive-grid" style={{ padding: 18, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
       <ApiCredentialCard
         title="TransVirtual"
         subtitle="Logistics ops, dispatch, tracking"
@@ -1110,7 +1110,7 @@ function AnalyticsScreen() {
         <div className="kpi"><div className="lbl">Cost / km</div><div className="val">$0.92</div><div className="delta">▼ $0.04</div></div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 14 }}>
+      <div className="responsive-grid" style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 14 }}>
         <div className="panel" style={{ minHeight: 280 }}>
           <div className="panel-h">
             <span className="ttl">Volume by cargo type</span>
@@ -1657,7 +1657,7 @@ function SettingsScreen({ theme, onThemeChange, onToast }) {
           <span className="ttl">Appearance</span>
           <span className="sub">Theme &amp; brightness</span>
         </div>
-        <div className="panel-b" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+        <div className="panel-b responsive-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
           <div className="field">
             <label>Theme</label>
             <div className="seg" style={{ width: "100%" }}>
@@ -1759,7 +1759,7 @@ function SettingsScreen({ theme, onThemeChange, onToast }) {
       </div>
 
       {/* Roles + 2FA */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+      <div className="responsive-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
         <div className="panel">
           <div className="panel-h"><span className="ttl">Roles &amp; permissions</span></div>
           <div className="panel-b" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
