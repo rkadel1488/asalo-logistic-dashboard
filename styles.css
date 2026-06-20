@@ -702,6 +702,11 @@ input, textarea, select { font-family: inherit; }
 
   .panel-b { overflow-x: auto; }
 
+  /* tables clipped by an ancestor .panel's inline overflow:hidden need their
+     own horizontal scroller on narrow screens instead of losing columns */
+  .panel:has(> table.tbl) { overflow-x: auto !important; }
+  .tbl { min-width: 640px; }
+
   .tl-row { grid-template-columns: 64px 18px 1fr; }
 
   /* page-level split layouts (e.g. map+panel, log+templates) stack on mobile
