@@ -37,6 +37,7 @@ function App() {
   const [selectedId, setSelectedId] = useState(null);
   const [smsState, setSmsState] = useState({ open: false, order: null, trigger: null, preset: null });
   const [toasts, setToasts] = useState([]);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   function handleAssign(orderId, driverId) {
     setAssignments(a => ({ ...a, [orderId]: driverId }));
@@ -89,11 +90,17 @@ function App() {
 
   return (
     <div className="asalo-app" data-bright={brightAttr(tweaks.themeBrightness) || undefined}>
-      <Sidebar active={view} onNav={(v) => { setView(v); setSelectedId(null); }} />
+      <Sidebar
+        active={view}
+        onNav={(v) => { setView(v); setSelectedId(null); }}
+        open={mobileNavOpen}
+        onClose={() => setMobileNavOpen(false)}
+      />
       <div className="main" style={{ position: "relative" }}>
         <Topbar
           crumbs={crumbsByView[view] || ["Dashboard"]}
           onSyncing={() => pushToast({ ttl: "Synced with TransVirtual", sub: "1,284 events · 0 errors" })}
+          onMenu={() => setMobileNavOpen(true)}
         />
         <div className="viewport">
           {view === "orders" && (
@@ -121,6 +128,12 @@ function App() {
             />
           )}
         </div>
+
+        <BottomNav
+          active={view}
+          onNav={(v) => { setView(v); setSelectedId(null); }}
+          onMore={() => setMobileNavOpen(true)}
+        />
 
         {selected && view === "orders" && (
           <OrderDrawer

@@ -35,6 +35,7 @@ const Icon = ({ name, size = 16, stroke = 1.6, ...rest }) => {
     download: "M12 3v12M7 10l5 5 5-5M5 21h14",
     refresh: "M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5",
     barrel: "M5 4h14v16H5zM5 8h14M5 16h14M9 4v16M15 4v16",
+    menu: "M3 6h18M3 12h18M3 18h18",
   };
   const d = paths[name] || paths.dot;
   return (

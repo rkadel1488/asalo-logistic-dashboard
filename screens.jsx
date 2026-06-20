@@ -55,6 +55,7 @@ function TrackingScreen({ orders, drivers, assignments, onAssign, onRemove }) {
   const inTransit = orders.filter((o) => ["in_transit", "loaded", "delayed"].includes(o.status));
   const [activeId, setActiveId] = React.useState(inTransit[0]?.id || null);
   const [showAssign, setShowAssign] = React.useState(null);
+  const [detailId, setDetailId] = React.useState(null);
 
   const mapRef = React.useRef(null);
   const mapInst = React.useRef(null);
@@ -175,7 +176,7 @@ function TrackingScreen({ orders, drivers, assignments, onAssign, onRemove }) {
   }
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 14, height: "calc(100vh - 48px)", padding: 18 }}>
+    <div className="responsive-grid" style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 14, height: "calc(100vh - 48px)", padding: 18 }}>
 
       {/* ---- Leaflet map ---- */}
       <div style={{ position: "relative", borderRadius: 8, overflow: "hidden", border: "1px solid var(--line)" }}>
@@ -211,7 +212,7 @@ function TrackingScreen({ orders, drivers, assignments, onAssign, onRemove }) {
               const isActive = o.id === activeId;
               return (
                 <div key={o.id}
-                  onClick={() => setActiveId(o.id)}
+                  onClick={() => { setActiveId(o.id); setDetailId(o.id); }}
                   style={{
                     padding: "11px 14px", borderBottom: "1px solid var(--line)", cursor: "pointer",
                     background: isActive ? "var(--bg-2)" : "transparent",
@@ -310,6 +311,38 @@ function TrackingScreen({ orders, drivers, assignments, onAssign, onRemove }) {
               </div>
             </div>
           </div>
+        );
+      })()}
+
+      {/* ---- Shipment Detail Modal ---- */}
+      {(() => {
+        const o = inTransit.find(x => x.id === detailId);
+        if (!o) return null;
+        const progress = ORDER_PROGRESS[o.id] || 0.1;
+        const driver = getDriver(assignments[o.id]);
+        return (
+          <DetailModal
+            open={!!o}
+            onClose={() => setDetailId(null)}
+            icon="map"
+            title={o.id}
+            subtitle={o.customer}
+            rows={[
+              { label: "Status", value: <StatusPill status={o.status} /> },
+              { label: "Progress", value: `${Math.round(progress * 100)}%` },
+              { label: "Origin", value: o.origin },
+              { label: "Destination", value: o.destination },
+              { label: "Vehicle", value: driver ? `${driver.truck} · ${driver.name}` : "Unassigned" },
+              { label: "ETA", value: o.eta },
+            ]}
+            actions={
+              driver ? (
+                <button className="btn ghost sm" onClick={() => { removeVehicle(o.id); }}><Icon name="x" size={11} /> Remove vehicle</button>
+              ) : (
+                <button className="btn primary sm" onClick={() => { setDetailId(null); setShowAssign(o.id); }}><Icon name="plus" size={11} /> Assign vehicle</button>
+              )
+            }
+          />
         );
       })()}
     </div>
@@ -430,6 +463,7 @@ function FleetScreen({ drivers, assignments, orders, onAddDriver, onToast }) {
   const [showAdd, setShowAdd] = React.useState(false);
   const [msgDriver, setMsgDriver] = React.useState(null);
   const [statusFilter, setStatusFilter] = React.useState("all");
+  const [selectedDriver, setSelectedDriver] = React.useState(null);
 
   const stMap = {
     on_route:  { lbl: "On route",  color: "var(--st-in_transit)" },
@@ -501,7 +535,7 @@ function FleetScreen({ drivers, assignments, orders, onAddDriver, onToast }) {
               const assignedOrder = assignedOrderId ? (orders || []).find(o => o.id === assignedOrderId) : null;
               const effStatus = effectiveStatus(d);
               return (
-                <tr key={d.id}>
+                <tr key={d.id} onClick={() => setSelectedDriver(d)} style={{ cursor: "pointer" }}>
                   {/* Driver */}
                   <td>
                     <div className="row" style={{ gap: 8 }}>
@@ -555,7 +589,7 @@ function FleetScreen({ drivers, assignments, orders, onAddDriver, onToast }) {
                   <td className="mono">{d.hours}</td>
 
                   {/* Contact actions */}
-                  <td>
+                  <td onClick={e => e.stopPropagation()}>
                     <div className="row" style={{ gap: 4 }}>
                       <a
                         href={`tel:${(d.phone || "").replace(/\s/g, "")}`}
@@ -586,6 +620,48 @@ function FleetScreen({ drivers, assignments, orders, onAddDriver, onToast }) {
 
       <AddDriverModal open={showAdd} onClose={() => setShowAdd(false)} onSave={d => { onAddDriver(d); setShowAdd(false); }} />
       <DriverMessageModal driver={msgDriver} onClose={() => setMsgDriver(null)} onSend={handleSend} />
+      {(() => {
+        const d = selectedDriver;
+        if (!d) return null;
+        const assignedOrderId = driverOrderMap[d.id];
+        const assignedOrder = assignedOrderId ? (orders || []).find(o => o.id === assignedOrderId) : null;
+        const effStatus = effectiveStatus(d);
+        return (
+          <DetailModal
+            open={!!d}
+            onClose={() => setSelectedDriver(null)}
+            icon="truck"
+            title={d.name}
+            subtitle={d.truck}
+            rows={[
+              { label: "Status", value: (
+                <span className="chip">
+                  <span className="dot" style={{ background: stMap[effStatus]?.color || "var(--fg-3)" }} />
+                  {stMap[effStatus]?.lbl || effStatus}
+                </span>
+              ) },
+              { label: "Phone", value: d.phone },
+              { label: "Load", value: `${Math.round((d.load || 0) * 100)}%` },
+              { label: "Hours of service", value: d.hours },
+              assignedOrder ? {
+                label: "Current assignment",
+                value: `${assignedOrder.id} · ${assignedOrder.origin} → ${assignedOrder.destination} · ETA ${assignedOrder.eta}`,
+                full: true,
+              } : { label: "Current assignment", value: d.route || "Unassigned", full: true },
+            ]}
+            actions={
+              <React.Fragment>
+                <a href={`tel:${(d.phone || "").replace(/\s/g, "")}`} className="btn ghost sm" style={{ textDecoration: "none" }}>
+                  <Icon name="phone" size={11} /> Call
+                </a>
+                <button className="btn primary sm" onClick={() => { setSelectedDriver(null); setMsgDriver(d); }}>
+                  <Icon name="sms" size={11} /> Message
+                </button>
+              </React.Fragment>
+            }
+          />
+        );
+      })()}
     </div>
   );
 }
@@ -725,7 +801,7 @@ function NotificationsScreen({ log, onToast }) {
         <div className="kpi"><div className="lbl">Cost · 24h</div><div className="val">$16.72</div><div className="delta">$0.04 / msg avg</div></div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 14 }}>
+      <div className="responsive-grid" style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 14 }}>
 
         {/* SMS Log */}
         <div className="panel" style={{ overflow: "hidden" }}>
@@ -888,9 +964,41 @@ function NewCustomerModal({ open, onClose, onSave }) {
   );
 }
 
+function DetailModal({ open, onClose, icon, title, subtitle, rows = [], actions }) {
+  if (!open) return null;
+  return (
+    <div className="modal-bd" onClick={onClose}>
+      <div className="modal" style={{ width: 460 }} onClick={e => e.stopPropagation()}>
+        <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 10 }}>
+          {icon && <Icon name={icon} />}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 600 }}>{title}</div>
+            {subtitle && <div className="muted" style={{ fontSize: 11.5 }}>{subtitle}</div>}
+          </div>
+          <button className="btn ghost sm" onClick={onClose}><Icon name="x" size={14} /></button>
+        </div>
+        <div style={{ padding: 16, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, fontSize: 12.5 }}>
+          {rows.map((r, i) => (
+            <div key={i} style={r.full ? { gridColumn: "1 / -1" } : undefined}>
+              <div className="muted" style={{ fontSize: 10.5, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>{r.label}</div>
+              <div style={{ fontWeight: r.bold ? 700 : 500, color: r.color }}>{r.value}</div>
+            </div>
+          ))}
+        </div>
+        {actions && (
+          <div style={{ padding: "0 16px 16px", display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            {actions}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function CustomersScreen({ customers, onAddCustomer, onToast }) {
   const [showAdd, setShowAdd] = React.useState(false);
   const [search, setSearch] = React.useState("");
+  const [selected, setSelected] = React.useState(null);
   const filtered = customers.filter(c => c.name.toLowerCase().includes(search.toLowerCase()) || (c.contact || "").toLowerCase().includes(search.toLowerCase()));
 
   return (
@@ -923,14 +1031,14 @@ function CustomersScreen({ customers, onAddCustomer, onToast }) {
           </thead>
           <tbody>
             {filtered.map((c) => (
-              <tr key={c.name}>
+              <tr key={c.name} onClick={() => setSelected(c)} style={{ cursor: "pointer" }}>
                 <td style={{ color: "var(--fg-0)", fontWeight: 500 }}>{c.name}</td>
                 <td>{c.contact}</td>
                 <td className="mono">{c.phone}</td>
                 <td className="mono tnum" style={{ textAlign: "right" }}>{c.orders}</td>
                 <td className="mono tnum" style={{ textAlign: "right" }}>{c.value}</td>
                 <td><span className="chip">{c.tier}</span></td>
-                <td><button className="btn ghost sm"><Icon name="arrow" size={12} /></button></td>
+                <td><button className="btn ghost sm" onClick={e => { e.stopPropagation(); setSelected(c); }}><Icon name="arrow" size={12} /></button></td>
               </tr>
             ))}
             {filtered.length === 0 && (
@@ -940,6 +1048,20 @@ function CustomersScreen({ customers, onAddCustomer, onToast }) {
         </table>
       </div>
       <NewCustomerModal open={showAdd} onClose={() => setShowAdd(false)} onSave={c => { onAddCustomer(c); setShowAdd(false); }} />
+      <DetailModal
+        open={!!selected}
+        onClose={() => setSelected(null)}
+        icon="contact"
+        title={selected?.name}
+        subtitle={selected ? `${selected.tier} account` : ""}
+        rows={selected ? [
+          { label: "Primary contact", value: selected.contact },
+          { label: "Phone", value: selected.phone },
+          { label: "Total orders", value: selected.orders },
+          { label: "Lifetime value", value: selected.value, bold: true },
+          { label: "Tier", value: selected.tier },
+        ] : []}
+      />
     </div>
   );
 }
@@ -1017,7 +1139,7 @@ function ApiCredentialCard({ title, subtitle, defaultEndpoint, keyPlaceholder, f
 
 function ApiScreen({ onToast }) {
   return (
-    <div style={{ padding: 18, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+    <div className="responsive-grid" style={{ padding: 18, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
       <ApiCredentialCard
         title="TransVirtual"
         subtitle="Logistics ops, dispatch, tracking"
@@ -1110,7 +1232,7 @@ function AnalyticsScreen() {
         <div className="kpi"><div className="lbl">Cost / km</div><div className="val">$0.92</div><div className="delta">▼ $0.04</div></div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 14 }}>
+      <div className="responsive-grid" style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 14 }}>
         <div className="panel" style={{ minHeight: 280 }}>
           <div className="panel-h">
             <span className="ttl">Volume by cargo type</span>
@@ -1431,10 +1553,9 @@ function BillingScreen({ customers, onToast }) {
           <tbody>
             {filtered.map(inv => (
               <React.Fragment key={inv.id}>
-                <tr onClick={() => setExpandedId(expandedId === inv.id ? null : inv.id)} style={{ cursor: "pointer" }}>
+                <tr onClick={() => setExpandedId(inv.id)} style={{ cursor: "pointer" }}>
                   <td>
-                    <Icon name={expandedId === inv.id ? "arrow" : "arrow"} size={11}
-                      style={{ transform: expandedId === inv.id ? "rotate(90deg)" : "none", transition: "transform 150ms", color: "var(--fg-3)" }} />
+                    <Icon name="arrow" size={11} style={{ color: "var(--fg-3)" }} />
                   </td>
                   <td className="mono" style={{ fontWeight: 600 }}>{inv.id}</td>
                   <td style={{ fontWeight: 500 }}>{inv.customer}</td>
@@ -1486,48 +1607,6 @@ function BillingScreen({ customers, onToast }) {
                     </div>
                   </td>
                 </tr>
-                {/* Expanded payment details row */}
-                {expandedId === inv.id && (
-                  <tr style={{ background: "var(--bg-2)" }}>
-                    <td colSpan={8} style={{ padding: "12px 18px" }}>
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, fontSize: 12 }}>
-                        <div>
-                          <div className="muted" style={{ fontSize: 10.5, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>Status</div>
-                          <span className="chip">
-                            <span className="dot" style={{ background: statusColors[inv.status] }} />
-                            {inv.status.replace("_", " ")}
-                          </span>
-                        </div>
-                        {inv.status === "paid" && (
-                          <>
-                            <div>
-                              <div className="muted" style={{ fontSize: 10.5, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>Paid on</div>
-                              <div style={{ fontWeight: 600 }}>{inv.paidOn}</div>
-                            </div>
-                            <div>
-                              <div className="muted" style={{ fontSize: 10.5, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>Payment method</div>
-                              <div style={{ fontWeight: 600 }}>{inv.paidMethod}</div>
-                            </div>
-                            <div>
-                              <div className="muted" style={{ fontSize: 10.5, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>Amount received</div>
-                              <div style={{ fontWeight: 700, color: "var(--st-delivered)" }}>${inv.amount.toLocaleString()}</div>
-                            </div>
-                          </>
-                        )}
-                        {inv.status !== "paid" && (
-                          <div>
-                            <div className="muted" style={{ fontSize: 10.5, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>Due date</div>
-                            <div style={{ fontWeight: 600, color: inv.status === "overdue" ? "var(--st-delayed)" : "var(--fg-0)" }}>{inv.due}</div>
-                          </div>
-                        )}
-                        <div>
-                          <div className="muted" style={{ fontSize: 10.5, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>Notes</div>
-                          <div>{inv.notes || <span className="muted">—</span>}</div>
-                        </div>
-                      </div>
-                    </td>
-                  </tr>
-                )}
               </React.Fragment>
             ))}
             {filtered.length === 0 && (
@@ -1539,6 +1618,43 @@ function BillingScreen({ customers, onToast }) {
 
       <NewInvoiceModal open={showNew} onClose={() => setShowNew(false)} onSave={addInvoice} customers={customers} />
       <MarkPaidModal invoice={markPaid} onClose={() => setMarkPaid(null)} onSave={confirmPaid} />
+      {(() => {
+        const inv = invoices.find(i => i.id === expandedId);
+        if (!inv) return null;
+        return (
+          <DetailModal
+            open={!!inv}
+            onClose={() => setExpandedId(null)}
+            icon="receipt"
+            title={inv.id}
+            subtitle={`${inv.customer} · Issued ${inv.issued}`}
+            rows={[
+              { label: "Status", value: (
+                <span className="chip">
+                  <span className="dot" style={{ background: statusColors[inv.status] }} />
+                  {inv.status.replace("_", " ")}
+                </span>
+              ) },
+              { label: "Amount", value: `$${inv.amount.toLocaleString()}`, bold: true },
+              ...(inv.status === "paid" ? [
+                { label: "Paid on", value: inv.paidOn },
+                { label: "Payment method", value: inv.paidMethod },
+              ] : [
+                { label: "Due date", value: inv.due, color: inv.status === "overdue" ? "var(--st-delayed)" : undefined },
+              ]),
+              { label: "Notes", value: inv.notes || "—", full: true },
+            ]}
+            actions={
+              <React.Fragment>
+                <button className="btn ghost sm" onClick={() => exportInvoice(inv)}><Icon name="download" size={11} /> Export</button>
+                {inv.status !== "paid" && (
+                  <button className="btn primary sm" onClick={() => { setExpandedId(null); setMarkPaid(inv); }}>✓ Mark as paid</button>
+                )}
+              </React.Fragment>
+            }
+          />
+        );
+      })()}
     </div>
   );
 }
@@ -1657,7 +1773,7 @@ function SettingsScreen({ theme, onThemeChange, onToast }) {
           <span className="ttl">Appearance</span>
           <span className="sub">Theme &amp; brightness</span>
         </div>
-        <div className="panel-b" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+        <div className="panel-b responsive-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
           <div className="field">
             <label>Theme</label>
             <div className="seg" style={{ width: "100%" }}>
@@ -1759,7 +1875,7 @@ function SettingsScreen({ theme, onThemeChange, onToast }) {
       </div>
 
       {/* Roles + 2FA */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+      <div className="responsive-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
         <div className="panel">
           <div className="panel-h"><span className="ttl">Roles &amp; permissions</span></div>
           <div className="panel-b" style={{ display: "flex", flexDirection: "column", gap: 8 }}>

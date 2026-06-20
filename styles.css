@@ -198,6 +198,12 @@ input, textarea, select { font-family: inherit; }
   border-bottom: 1px solid var(--line);
   background: var(--bg-0);
 }
+.menu-btn { display: none; flex: none; }
+.sb-backdrop {
+  position: fixed; inset: 0;
+  background: oklch(0.10 0.01 250 / 0.55);
+  z-index: 39;
+}
 .crumb { color: var(--fg-2); font-size: 12.5px; }
 .crumb b { color: var(--fg-0); font-weight: 600; }
 .search {
@@ -393,6 +399,7 @@ input, textarea, select { font-family: inherit; }
 .field textarea { resize: vertical; min-height: 70px; font-family: inherit; }
 
 /* ----------- Drawer / overlays ----------- */
+.drawer-bd { display: none; }
 .drawer {
   position: absolute;
   top: 48px; right: 0; bottom: 0;
@@ -593,3 +600,126 @@ input, textarea, select { font-family: inherit; }
 }
 .toast .ttl { font-weight: 600; font-size: 12px; }
 .toast .sub { color: var(--fg-2); font-size: 11.5px; margin-top: 2px; }
+
+/* ----------- App-style bottom tab bar ----------- */
+.bottom-nav {
+  display: none;
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 41;
+  background: var(--bg-1);
+  border-top: 1px solid var(--line);
+  padding: 6px 4px calc(6px + env(safe-area-inset-bottom, 0px));
+  justify-content: space-around;
+  align-items: stretch;
+}
+.bn-item {
+  flex: 1;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  background: none; border: none;
+  color: var(--fg-3);
+  font-size: 10.5px; font-weight: 600;
+  padding: 4px 2px;
+  border-radius: var(--radius);
+  -webkit-tap-highlight-color: transparent;
+}
+.bn-item .ico { width: 20px; height: 20px; }
+.bn-item.active { color: var(--accent); }
+.bn-item:active { background: var(--bg-2); }
+
+/* ----------- Responsive / mobile ----------- */
+@media (max-width: 980px) {
+  .kpis { grid-template-columns: repeat(2, minmax(0,1fr)); }
+}
+
+@media (max-width: 860px) {
+  html, body { overscroll-behavior-y: contain; }
+
+  .asalo-app { grid-template-columns: 1fr; }
+
+  .sidebar {
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    width: 260px;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    transform: translateX(-100%);
+    transition: transform 200ms cubic-bezier(.2,.8,.2,1);
+    z-index: 40;
+  }
+  .sidebar.open { transform: translateX(0); box-shadow: 20px 0 60px rgba(0,0,0,0.4); }
+
+  .main {
+    grid-template-rows: calc(48px + env(safe-area-inset-top, 0px)) 1fr;
+  }
+  .topbar {
+    padding: env(safe-area-inset-top, 0px) 14px 0;
+    height: calc(48px + env(safe-area-inset-top, 0px));
+  }
+
+  .search { display: none; }
+  .tb-pill { display: none; }
+  .tb-sync, .tb-bell { display: none; }
+  .menu-btn { display: inline-flex; }
+
+  .bottom-nav { display: flex; }
+  .viewport { padding-bottom: calc(58px + env(safe-area-inset-bottom, 0px)); }
+
+  .drawer-bd {
+    display: block;
+    position: fixed; inset: 0;
+    background: oklch(0.10 0.01 250 / 0.6);
+    backdrop-filter: blur(2px);
+    z-index: 29;
+  }
+
+  .drawer {
+    position: fixed;
+    top: 50%; left: 50%; right: auto; bottom: auto;
+    transform: translate(-50%, -50%);
+    width: calc(100% - 32px);
+    max-width: 480px;
+    max-height: calc(100% - 32px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    border-left: 1px solid var(--line);
+    border-radius: 14px;
+    overflow-y: auto;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.5);
+    animation: pop 200ms cubic-bezier(.2,.8,.2,1);
+  }
+
+  .modal-bd { padding: 16px; padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
+  .modal {
+    width: 100% !important;
+    max-width: 480px;
+    max-height: 100% !important;
+    overflow-y: auto;
+    border-radius: 14px;
+  }
+
+  .kpis { grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; }
+  .kpi { padding: 10px 12px; }
+  .kpi .val { font-size: 19px; }
+
+  .panel-b { overflow-x: auto; }
+
+  .tl-row { grid-template-columns: 64px 18px 1fr; }
+
+  /* page-level split layouts (e.g. map+panel, log+templates) stack on mobile
+     instead of overflowing the viewport and hiding their second column */
+  .responsive-grid { grid-template-columns: 1fr !important; height: auto !important; }
+
+  /* toolbar rows wrap instead of clipping action buttons off-screen */
+  .panel-h { flex-wrap: wrap; row-gap: 8px; height: auto; }
+  .panel-h .sp { flex-basis: 100%; height: 0; }
+
+  /* bigger touch targets */
+  .btn { padding: 8px 12px; }
+  .btn.sm { padding: 6px 10px; }
+  .tbl tbody td { height: 48px; }
+}
+
+@media (max-width: 540px) {
+  .kpis { grid-template-columns: 1fr 1fr; }
+  .crumb { font-size: 11.5px; }
+  .panel-b { padding: 10px; }
+}
