@@ -1202,6 +1202,19 @@ function ApiScreen({ onToast }) {
         ]}
       />
 
+      <ApiCredentialCard
+        title="WhatsApp · OpenWA"
+        subtitle="Customer notifications via WhatsApp Web session"
+        defaultEndpoint="http://localhost:8002/api"
+        keyPlaceholder="Paste OpenWA session API key"
+        onToast={onToast}
+        fields={[
+          { name: "sessionId", label: "Session ID", placeholder: "e.g. asalo-ops", mono: true },
+          { name: "from", label: "Sender number", placeholder: "+61 4 …", mono: true },
+          { name: "webhook", label: "Webhook URL", placeholder: "https://asalo.co/api/hooks/whatsapp", mono: true, default: "https://asalo.co/api/hooks/whatsapp" },
+        ]}
+      />
+
       <div className="panel" style={{ gridColumn: "span 2" }}>
         <div className="panel-h">
           <span className="ttl">Connections</span>
@@ -1211,6 +1224,7 @@ function ApiScreen({ onToast }) {
         <div className="panel-b" style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8 }}>
           {[
             { n: "Website orders (asalo.co)", s: "Receives new orders via webhook", live: true },
+            { n: "WhatsApp · OpenWA", s: "Customer messaging via WhatsApp Web", live: false },
             { n: "Email · Postmark", s: "Transactional email", live: false },
             { n: "Accounting · Xero", s: "Sync invoices & customers", live: false },
             { n: "Slack · #ops-alerts", s: "Push alerts to ops channel", live: false },
