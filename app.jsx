@@ -52,6 +52,27 @@ function App() {
     setDrivers(arr => [...arr, d]);
     pushToast({ ttl: "Driver added", sub: `${d.name} · ${d.truck}` });
   }
+  function handleDeleteOrder(orderId) {
+    const o = orders.find(x => x.id === orderId);
+    setOrders(arr => arr.filter(x => x.id !== orderId));
+    setAssignments(a => { const n = { ...a }; delete n[orderId]; return n; });
+    if (selectedId === orderId) setSelectedId(null);
+    pushToast({ ttl: "Order deleted", sub: o ? `${o.id} · ${o.customer}` : orderId });
+  }
+  function handleDeleteCustomer(name) {
+    setCustomers(arr => arr.filter(x => x.name !== name));
+    pushToast({ ttl: "Customer deleted", sub: name });
+  }
+  function handleDeleteDriver(driverId) {
+    const d = drivers.find(x => x.id === driverId);
+    setDrivers(arr => arr.filter(x => x.id !== driverId));
+    setAssignments(a => {
+      const n = { ...a };
+      Object.keys(n).forEach(k => { if (n[k] === driverId) delete n[k]; });
+      return n;
+    });
+    pushToast({ ttl: "Driver removed", sub: d ? `${d.name} · ${d.truck}` : driverId });
+  }
 
   const selected = orders.find((o) => o.id === selectedId);
 
@@ -110,13 +131,14 @@ function App() {
               onSelect={setSelectedId}
               density={tweaks.density}
               onNewOrder={(o) => { setOrders((arr) => [o, ...arr]); pushToast({ ttl: "Order created", sub: `${o.id} · ${o.customer}` }); }}
+              onDeleteOrder={handleDeleteOrder}
               onToast={pushToast}
             />
           )}
           {view === "tracking"      && <TrackingScreen orders={orders} drivers={drivers} assignments={assignments} onAssign={handleAssign} onRemove={handleRemove} />}
-          {view === "fleet"         && <FleetScreen drivers={drivers} assignments={assignments} orders={orders} onAddDriver={handleAddDriver} onToast={pushToast} />}
+          {view === "fleet"         && <FleetScreen drivers={drivers} assignments={assignments} orders={orders} onAddDriver={handleAddDriver} onDeleteDriver={handleDeleteDriver} onToast={pushToast} />}
           {view === "notifications" && <NotificationsScreen log={window.SMS_LOG} onToast={pushToast} />}
-          {view === "customers"     && <CustomersScreen customers={customers} onAddCustomer={c => { setCustomers(arr => [...arr, c]); pushToast({ ttl: "Customer added", sub: c.name }); }} onToast={pushToast} />}
+          {view === "customers"     && <CustomersScreen customers={customers} onAddCustomer={c => { setCustomers(arr => [...arr, c]); pushToast({ ttl: "Customer added", sub: c.name }); }} onDeleteCustomer={handleDeleteCustomer} onToast={pushToast} />}
           {view === "billing"       && <BillingScreen customers={customers} onToast={pushToast} />}
           {view === "analytics"     && <AnalyticsScreen />}
           {view === "api"           && <ApiScreen onToast={pushToast} />}
@@ -141,6 +163,7 @@ function App() {
             onClose={() => setSelectedId(null)}
             onAdvance={advance}
             onSendCustom={(o) => setSmsState({ open: true, order: o, trigger: null, preset: window.SMS_TEMPLATES.out_for_delivery })}
+            onDelete={handleDeleteOrder}
           />
         )}
 

@@ -233,11 +233,12 @@ function FiltersPanel({ open, filters, onChange, onReset, orders }) {
 }
 
 /* ============ ORDERS SCREEN ============ */
-function OrdersScreen({ orders, onSelect, selectedId, onAdvance, density, onNewOrder, onToast }) {
+function OrdersScreen({ orders, onSelect, selectedId, onAdvance, density, onNewOrder, onDeleteOrder, onToast }) {
   const [statusFilter, setStatusFilter] = React.useState("all");
   const [cargo, setCargo] = React.useState("all");
   const [showFilters, setShowFilters] = React.useState(false);
   const [showNewOrder, setShowNewOrder] = React.useState(false);
+  const [deleteTarget, setDeleteTarget] = React.useState(null);
   const FILTER_DEFAULTS = { customer: "all", priority: "all", weightMin: "", weightMax: "" };
   const [advFilters, setAdvFilters] = React.useState(FILTER_DEFAULTS);
 
@@ -400,7 +401,7 @@ function OrdersScreen({ orders, onSelect, selectedId, onAdvance, density, onNewO
                 <th style={{ textAlign: "right" }}>Weight</th>
                 <th>Status</th>
                 <th>ETA</th>
-                <th style={{ width: 80 }}></th>
+                <th style={{ width: 110 }}></th>
               </tr>
             </thead>
             <tbody>
@@ -438,10 +439,15 @@ function OrdersScreen({ orders, onSelect, selectedId, onAdvance, density, onNewO
                   <td className="mono tnum" style={{ textAlign: "right" }}>{o.weight}</td>
                   <td><StatusPill status={o.status} /></td>
                   <td className="muted" style={{ fontSize: 11.5 }}>{o.eta}</td>
-                  <td>
-                    <button className="btn ghost sm" onClick={(e) => { e.stopPropagation(); onSelect(o.id); }}>
-                      <Icon name="arrow" size={12} />
-                    </button>
+                  <td onClick={e => e.stopPropagation()}>
+                    <div className="row" style={{ gap: 4 }}>
+                      <button className="btn ghost sm" onClick={() => onSelect(o.id)}>
+                        <Icon name="arrow" size={12} />
+                      </button>
+                      <button className="btn ghost sm" title={`Delete ${o.id}`} onClick={() => setDeleteTarget(o)}>
+                        <Icon name="trash" size={12} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -456,11 +462,20 @@ function OrdersScreen({ orders, onSelect, selectedId, onAdvance, density, onNewO
         onClose={() => setShowNewOrder(false)}
         onSave={onNewOrder}
       />
+
+      <ConfirmModal
+        open={!!deleteTarget}
+        title="Delete order"
+        message={deleteTarget ? `Delete ${deleteTarget.id} · ${deleteTarget.customer}? This cannot be undone.` : ""}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => { onDeleteOrder && onDeleteOrder(deleteTarget.id); setDeleteTarget(null); }}
+      />
     </div>
   );
 }
 
-function OrderDrawer({ order, onClose, onAdvance, onSendCustom }) {
+function OrderDrawer({ order, onClose, onAdvance, onSendCustom, onDelete }) {
+  const [confirmDelete, setConfirmDelete] = React.useState(false);
   if (!order) return null;
   const flow = window.STATUS_FLOW;
   const idx = flow.indexOf(order.status);
@@ -476,6 +491,7 @@ function OrderDrawer({ order, onClose, onAdvance, onSendCustom }) {
         <StatusPill status={order.status} />
         {order.priority === "high" && <span className="priority-high">priority</span>}
         <div style={{ flex: 1 }} />
+        <button className="btn ghost sm" title="Delete order" onClick={() => setConfirmDelete(true)}><Icon name="trash" size={14} /></button>
         <button className="btn ghost sm" onClick={onClose}><Icon name="x" size={14} /></button>
       </div>
 
@@ -572,6 +588,13 @@ function OrderDrawer({ order, onClose, onAdvance, onSendCustom }) {
         )}
       </div>
       </aside>
+      <ConfirmModal
+        open={confirmDelete}
+        title="Delete order"
+        message={`Delete ${order.id} · ${order.customer}? This cannot be undone.`}
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={() => { setConfirmDelete(false); onClose(); onDelete && onDelete(order.id); }}
+      />
     </React.Fragment>
   );
 }
