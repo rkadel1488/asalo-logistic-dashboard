@@ -2,7 +2,7 @@
 
 const NAV = [
   { section: "Operations" },
-  { key: "orders", label: "Orders", icon: "inbox", badge: "8" },
+  { key: "orders", label: "Orders", icon: "inbox" },
   { key: "tracking", label: "Live Tracking", icon: "map" },
   { key: "fleet", label: "Fleet & Drivers", icon: "truck" },
   { key: "notifications", label: "SMS & Notifications", icon: "bell", badge: "26" },
@@ -16,7 +16,7 @@ const NAV = [
   { key: "settings", label: "Settings", icon: "cog" },
 ];
 
-function Sidebar({ active, onNav, open, onClose }) {
+function Sidebar({ active, onNav, open, onClose, orderCount }) {
   return (
     <React.Fragment>
       {open && <div className="sb-backdrop" onClick={onClose} />}
@@ -40,7 +40,7 @@ function Sidebar({ active, onNav, open, onClose }) {
               >
                 <Icon name={n.icon} />
                 {n.label}
-                {n.badge && <span className="badge">{n.badge}</span>}
+                {n.key === "orders" ? (orderCount > 0 && <span className="badge">{orderCount}</span>) : (n.badge && <span className="badge">{n.badge}</span>)}
               </button>
             </div>
           )

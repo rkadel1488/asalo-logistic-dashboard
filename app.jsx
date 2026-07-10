@@ -48,8 +48,32 @@ function App() {
         return;
       }
       seeded.current = true;
-      setOrders(snap.docs.map(d => ({ ...d.data(), id: d.id })));
+      const incoming = snap.docs.map(d => ({ ...d.data(), id: d.id }));
+      setOrders(incoming);
       setOrdersLoading(false);
+      // Auto-register unknown customers
+      setCustomers(existing => {
+        const names = new Set(existing.map(c => c.name));
+        const newOnes = [];
+        incoming.forEach(o => {
+          if (o.customer && !names.has(o.customer)) {
+            names.add(o.customer);
+            newOnes.push({
+              name: o.customer,
+              contact: o.contactName || "",
+              phone: o.contact || "",
+              abn: o.abn || "",
+              vat: o.vat || "",
+              billingEmail: o.billingEmail || "",
+              billingAddress: o.billingAddress || "",
+              orders: 1,
+              value: o.value || "$0",
+              tier: "Standard",
+            });
+          }
+        });
+        return newOnes.length ? [...existing, ...newOnes] : existing;
+      });
     }, () => setOrdersLoading(false));
     return () => unsub();
   }, []);
@@ -138,6 +162,7 @@ function App() {
         onNav={(v) => { setView(v); setSelectedId(null); }}
         open={mobileNavOpen}
         onClose={() => setMobileNavOpen(false)}
+        orderCount={orders.length}
       />
       <div className="main" style={{ position: "relative" }}>
         <Topbar
