@@ -13,10 +13,9 @@ function App() {
   const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
   const [orders, setOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
-  const seeded = useRef(false);
   const [drivers, setDrivers] = useState(window.DRIVERS);
   const [customers, setCustomers] = useState(window.CUSTOMERS);
-  const [assignments, setAssignments] = useState({ "ASL-24868": "drv-014", "ASL-24867": "drv-007", "ASL-24869": "drv-022" });
+  const [assignments, setAssignments] = useState({});
   const [view, setView] = useState("orders");
   const [selectedId, setSelectedId] = useState(null);
   const [smsState, setSmsState] = useState({ open: false, order: null, trigger: null, preset: null });
@@ -37,17 +36,6 @@ function App() {
   useEffect(() => {
     const col = window.db.collection("orders");
     const unsub = col.orderBy("createdAt", "desc").onSnapshot(snap => {
-      if (snap.empty && !seeded.current) {
-        seeded.current = true;
-        const batch = window.db.batch();
-        const ts = firebase.firestore.Timestamp.now();
-        window.ORDERS.forEach((o, i) => {
-          batch.set(col.doc(o.id), { ...o, createdAt: new firebase.firestore.Timestamp(ts.seconds - i * 60, 0) });
-        });
-        batch.commit();
-        return;
-      }
-      seeded.current = true;
       const incoming = snap.docs.map(d => ({ ...d.data(), id: d.id }));
       setOrders(incoming);
       setOrdersLoading(false);
