@@ -37,6 +37,7 @@ const Icon = ({ name, size = 16, stroke = 1.6, ...rest }) => {
     barrel: "M5 4h14v16H5zM5 8h14M5 16h14M9 4v16M15 4v16",
     menu: "M3 6h18M3 12h18M3 18h18",
     trash: "M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14M10 11v6M14 11v6",
+    print: "M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z",
   };
   const d = paths[name] || paths.dot;
   return (
