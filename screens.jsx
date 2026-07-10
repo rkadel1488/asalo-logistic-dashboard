@@ -1537,6 +1537,90 @@ function BillingScreen({ customers, onToast }) {
     onToast && onToast({ ttl: `Exported ${inv.id}`, sub: `${inv.customer} · $${inv.amount.toLocaleString()}` });
   }
 
+  function printInvoice(inv) {
+    const cust = customers.find(c => c.name === inv.customer) || {};
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${inv.id}</title><style>
+      *{box-sizing:border-box;margin:0;padding:0}
+      body{font-family:Arial,sans-serif;font-size:13px;color:#222;padding:40px;max-width:800px;margin:0 auto}
+      .top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:32px}
+      .company-name{font-size:22px;font-weight:700;color:#1a1a2e;letter-spacing:0.04em}
+      .company-sub{font-size:11px;color:#888;margin-top:2px}
+      .logo-box{text-align:right}
+      .bill-row{display:flex;justify-content:space-between;margin-bottom:28px}
+      .bill-to h4{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#888;margin-bottom:6px}
+      .bill-to p{font-size:13px;line-height:1.7}
+      .meta{text-align:right;font-size:12px;line-height:2}
+      .meta .lbl{color:#888}
+      .meta .val{font-weight:600;margin-left:24px}
+      .header-bar{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;background:#1a3a5c;color:#fff;border-radius:6px 6px 0 0;margin-bottom:0}
+      .header-bar .cell{padding:12px 16px}
+      .header-bar .cell .top-lbl{font-size:10px;opacity:0.7;margin-bottom:4px}
+      .header-bar .cell .top-val{font-size:18px;font-weight:700}
+      .header-bar .cell:last-child{background:#1a1a2e;border-radius:0 6px 0 0}
+      table{width:100%;border-collapse:collapse;margin-top:0}
+      thead tr{border-bottom:2px solid #e5e5e5}
+      th{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:#888;padding:10px 16px;text-align:left}
+      th:last-child,td:last-child{text-align:right}
+      td{padding:12px 16px;border-bottom:1px solid #f0f0f0;font-size:13px}
+      .total-row td{font-weight:700;font-size:14px;border-bottom:none;padding-top:16px}
+      .footer{margin-top:48px;padding-top:16px;border-top:1px solid #e5e5e5;display:flex;justify-content:space-between;font-size:11px;color:#888}
+      ${inv.status === "paid" ? ".paid-stamp{display:block;position:fixed;top:80px;right:60px;border:4px solid #22c55e;color:#22c55e;font-size:36px;font-weight:900;padding:8px 20px;border-radius:6px;opacity:0.3;transform:rotate(-15deg);text-transform:uppercase;letter-spacing:0.1em}" : ".paid-stamp{display:none}"}
+      @media print{body{padding:20px}.paid-stamp{position:absolute}}
+    </style></head><body>
+    <div class="paid-stamp">PAID</div>
+    <div class="top">
+      <div>
+        <div class="company-name">ASALO Logistic</div>
+        <div class="company-sub">Melbourne, VIC · Australia<br>info@asalo.com.au · asalo.com.au</div>
+      </div>
+      <div class="logo-box">
+        <div style="font-size:28px;font-weight:900;color:#1a3a5c;letter-spacing:0.05em">ASALO</div>
+        <div style="font-size:10px;color:#888;letter-spacing:0.15em">LOGISTIC</div>
+      </div>
+    </div>
+    <div class="bill-row">
+      <div class="bill-to">
+        <h4>Bill To</h4>
+        <p><strong>${inv.customer}</strong><br>
+        ${cust.contact ? cust.contact + '<br>' : ''}
+        ${cust.billingAddress ? cust.billingAddress + '<br>' : ''}
+        ${cust.phone ? cust.phone + '<br>' : ''}
+        ${cust.abn ? 'ABN: ' + cust.abn + '<br>' : ''}
+        ${cust.vat ? 'GST/VAT: ' + cust.vat : ''}</p>
+      </div>
+      <div class="meta">
+        <div><span class="lbl">Invoice No.:</span><span class="val">${inv.id}</span></div>
+        <div><span class="lbl">Issue date:</span><span class="val">${inv.issued}</span></div>
+        <div><span class="lbl">Due date:</span><span class="val">${inv.due}</span></div>
+        ${inv.notes ? `<div><span class="lbl">Reference:</span><span class="val">${inv.notes}</span></div>` : ''}
+      </div>
+    </div>
+    <div class="header-bar">
+      <div class="cell"><div class="top-lbl">Invoice No.</div><div class="top-val">${inv.id}</div></div>
+      <div class="cell"><div class="top-lbl">Issue date</div><div class="top-val">${inv.issued}</div></div>
+      <div class="cell"><div class="top-lbl">Due date</div><div class="top-val">${inv.due}</div></div>
+      <div class="cell"><div class="top-lbl">Total due (AUD)</div><div class="top-val">$${inv.amount.toLocaleString()}</div></div>
+    </div>
+    <table>
+      <thead><tr><th>Description</th><th>Quantity</th><th>Unit price ($)</th><th>Amount ($)</th></tr></thead>
+      <tbody>
+        <tr><td>Freight logistics services — ${inv.customer}</td><td>1</td><td>${inv.amount.toLocaleString()}.00</td><td>${inv.amount.toLocaleString()}.00</td></tr>
+        ${inv.notes ? `<tr><td colspan="4" style="color:#888;font-size:12px;padding-top:4px">${inv.notes}</td></tr>` : ''}
+      </tbody>
+      <tfoot><tr class="total-row"><td colspan="3">Total (AUD):</td><td>$${inv.amount.toLocaleString()}.00</td></tr></tfoot>
+    </table>
+    <div class="footer">
+      <div>ASALO Logistic · Melbourne, VIC, Australia</div>
+      <div>info@asalo.com.au</div>
+    </div>
+    <script>window.onload=()=>{window.print()}</script>
+    </body></html>`;
+    const w = window.open("", "_blank", "width=860,height=1100");
+    w.document.write(html);
+    w.document.close();
+    onToast && onToast({ ttl: `Print preview opened`, sub: `${inv.id} · ${inv.customer}` });
+  }
+
   function exportAll() {
     if (!window.XLSX) return;
     const rows = filtered.map(i => ({ "Invoice": i.id, "Customer": i.customer, "Issued": i.issued, "Due": i.due, "Amount": `$${i.amount.toLocaleString()}`, "Status": i.status, "Paid On": i.paidOn || "", "Payment Method": i.paidMethod || "" }));
@@ -1632,6 +1716,9 @@ function BillingScreen({ customers, onToast }) {
                       <button className="btn ghost sm" title="Export this invoice" onClick={() => exportInvoice(inv)}>
                         <Icon name="download" size={11} />
                       </button>
+                      <button className="btn ghost sm" title="Print invoice" onClick={() => printInvoice(inv)}>
+                        <Icon name="print" size={11} />
+                      </button>
                       <button className="btn ghost sm" title="Delete this invoice" onClick={() => setDeleteTarget(inv)}>
                         <Icon name="trash" size={11} />
                       </button>
@@ -1708,6 +1795,7 @@ function BillingScreen({ customers, onToast }) {
             actions={
               <React.Fragment>
                 <button className="btn ghost sm" onClick={() => exportInvoice(inv)}><Icon name="download" size={11} /> Export</button>
+                <button className="btn ghost sm" onClick={() => printInvoice(inv)}><Icon name="print" size={11} /> Print</button>
                 {inv.status !== "paid" && (
                   <button className="btn primary sm" onClick={() => { setExpandedId(null); setMarkPaid(inv); }}>✓ Mark as paid</button>
                 )}
