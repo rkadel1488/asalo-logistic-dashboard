@@ -1,6 +1,6 @@
 // Main app — orchestrates screens, drawer, SMS composer, toasts, tweaks
 
-const { useState, useEffect, useMemo } = React;
+const { useState, useEffect, useRef, useMemo } = React;
 
 const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "accentHue": 75,
@@ -11,6 +11,17 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
 
 function App() {
   const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
+  const [orders, setOrders] = useState([]);
+  const [ordersLoading, setOrdersLoading] = useState(true);
+  const seeded = useRef(false);
+  const [drivers, setDrivers] = useState(window.DRIVERS);
+  const [customers, setCustomers] = useState(window.CUSTOMERS);
+  const [assignments, setAssignments] = useState({ "ASL-24868": "drv-014", "ASL-24867": "drv-007", "ASL-24869": "drv-022" });
+  const [view, setView] = useState("orders");
+  const [selectedId, setSelectedId] = useState(null);
+  const [smsState, setSmsState] = useState({ open: false, order: null, trigger: null, preset: null });
+  const [toasts, setToasts] = useState([]);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   // Apply accent + density + theme live
   useEffect(() => {
@@ -22,22 +33,33 @@ function App() {
     document.documentElement.dataset.theme = mode;
   }, [tweaks.accentHue, tweaks.density, tweaks.themeMode]);
 
+  // Firestore real-time orders subscription
+  useEffect(() => {
+    const col = window.db.collection("orders");
+    const unsub = col.orderBy("createdAt", "desc").onSnapshot(snap => {
+      if (snap.empty && !seeded.current) {
+        seeded.current = true;
+        const batch = window.db.batch();
+        const ts = firebase.firestore.Timestamp.now();
+        window.ORDERS.forEach((o, i) => {
+          batch.set(col.doc(o.id), { ...o, createdAt: new firebase.firestore.Timestamp(ts.seconds - i * 60, 0) });
+        });
+        batch.commit();
+        return;
+      }
+      seeded.current = true;
+      setOrders(snap.docs.map(d => ({ ...d.data(), id: d.id })));
+      setOrdersLoading(false);
+    }, () => setOrdersLoading(false));
+    return () => unsub();
+  }, []);
+
   function brightAttr(b) {
     if (!b) return null;
     const sign = b > 0 ? "up" : "down";
     const mag = Math.min(3, Math.ceil(Math.abs(b) / 7));
     return `${sign}-${mag}`;
   }
-
-  const [orders, setOrders] = useState(window.ORDERS);
-  const [drivers, setDrivers] = useState(window.DRIVERS);
-  const [customers, setCustomers] = useState(window.CUSTOMERS);
-  const [assignments, setAssignments] = useState({ "ASL-24868": "drv-014", "ASL-24867": "drv-007", "ASL-24869": "drv-022" });
-  const [view, setView] = useState("orders");
-  const [selectedId, setSelectedId] = useState(null);
-  const [smsState, setSmsState] = useState({ open: false, order: null, trigger: null, preset: null });
-  const [toasts, setToasts] = useState([]);
-  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   function handleAssign(orderId, driverId) {
     setAssignments(a => ({ ...a, [orderId]: driverId }));
@@ -54,7 +76,7 @@ function App() {
   }
   function handleDeleteOrder(orderId) {
     const o = orders.find(x => x.id === orderId);
-    setOrders(arr => arr.filter(x => x.id !== orderId));
+    window.db.collection("orders").doc(orderId).delete();
     setAssignments(a => { const n = { ...a }; delete n[orderId]; return n; });
     if (selectedId === orderId) setSelectedId(null);
     pushToast({ ttl: "Order deleted", sub: o ? `${o.id} · ${o.customer}` : orderId });
@@ -88,7 +110,7 @@ function App() {
 
   function sendSmsAndAdvance({ order, text, trigger }) {
     if (trigger) {
-      setOrders((arr) => arr.map((o) => (o.id === order.id ? { ...o, status: trigger } : o)));
+      window.db.collection("orders").doc(order.id).update({ status: trigger });
     }
     setSmsState({ open: false, order: null, trigger: null, preset: null });
     pushToast({
@@ -124,13 +146,22 @@ function App() {
           onMenu={() => setMobileNavOpen(true)}
         />
         <div className="viewport">
-          {view === "orders" && (
+          {ordersLoading && view === "orders" && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", flexDirection: "column", gap: 12 }}>
+              <Icon name="refresh" size={22} style={{ opacity: 0.4, animation: "spin 1s linear infinite" }} />
+              <div className="muted" style={{ fontSize: 13 }}>Loading orders from Firestore…</div>
+            </div>
+          )}
+          {view === "orders" && !ordersLoading && (
             <OrdersScreen
               orders={orders}
               selectedId={selectedId}
               onSelect={setSelectedId}
               density={tweaks.density}
-              onNewOrder={(o) => { setOrders((arr) => [o, ...arr]); pushToast({ ttl: "Order created", sub: `${o.id} · ${o.customer}` }); }}
+              onNewOrder={(o) => {
+                window.db.collection("orders").doc(o.id).set({ ...o, createdAt: firebase.firestore.FieldValue.serverTimestamp() });
+                pushToast({ ttl: "Order created", sub: `${o.id} · ${o.customer}` });
+              }}
               onDeleteOrder={handleDeleteOrder}
               onToast={pushToast}
             />
