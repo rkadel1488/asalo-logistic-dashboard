@@ -459,11 +459,12 @@ function DriverMessageModal({ driver, onClose, onSend }) {
   );
 }
 
-function FleetScreen({ drivers, assignments, orders, onAddDriver, onToast }) {
+function FleetScreen({ drivers, assignments, orders, onAddDriver, onDeleteDriver, onToast }) {
   const [showAdd, setShowAdd] = React.useState(false);
   const [msgDriver, setMsgDriver] = React.useState(null);
   const [statusFilter, setStatusFilter] = React.useState("all");
   const [selectedDriver, setSelectedDriver] = React.useState(null);
+  const [deleteTarget, setDeleteTarget] = React.useState(null);
 
   const stMap = {
     on_route:  { lbl: "On route",  color: "var(--st-in_transit)" },
@@ -606,6 +607,13 @@ function FleetScreen({ drivers, assignments, orders, onAddDriver, onToast }) {
                       >
                         <Icon name="sms" size={12} />
                       </button>
+                      <button
+                        className="btn ghost sm"
+                        title={`Delete ${d.name}`}
+                        onClick={() => setDeleteTarget(d)}
+                      >
+                        <Icon name="trash" size={12} />
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -657,11 +665,22 @@ function FleetScreen({ drivers, assignments, orders, onAddDriver, onToast }) {
                 <button className="btn primary sm" onClick={() => { setSelectedDriver(null); setMsgDriver(d); }}>
                   <Icon name="sms" size={11} /> Message
                 </button>
+                <button className="btn ghost sm" onClick={() => { setSelectedDriver(null); setDeleteTarget(d); }}>
+                  <Icon name="trash" size={11} /> Delete
+                </button>
               </React.Fragment>
             }
           />
         );
       })()}
+      <ConfirmModal
+        open={!!deleteTarget}
+        title="Remove driver"
+        message={deleteTarget ? `Remove ${deleteTarget.name} · ${deleteTarget.truck}? This cannot be undone.` : ""}
+        confirmLabel="Remove"
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => { onDeleteDriver && onDeleteDriver(deleteTarget.id); setDeleteTarget(null); }}
+      />
     </div>
   );
 }
@@ -995,10 +1014,11 @@ function DetailModal({ open, onClose, icon, title, subtitle, rows = [], actions 
   );
 }
 
-function CustomersScreen({ customers, onAddCustomer, onToast }) {
+function CustomersScreen({ customers, onAddCustomer, onDeleteCustomer, onToast }) {
   const [showAdd, setShowAdd] = React.useState(false);
   const [search, setSearch] = React.useState("");
   const [selected, setSelected] = React.useState(null);
+  const [deleteTarget, setDeleteTarget] = React.useState(null);
   const filtered = customers.filter(c => c.name.toLowerCase().includes(search.toLowerCase()) || (c.contact || "").toLowerCase().includes(search.toLowerCase()));
 
   return (
@@ -1038,7 +1058,12 @@ function CustomersScreen({ customers, onAddCustomer, onToast }) {
                 <td className="mono tnum" style={{ textAlign: "right" }}>{c.orders}</td>
                 <td className="mono tnum" style={{ textAlign: "right" }}>{c.value}</td>
                 <td><span className="chip">{c.tier}</span></td>
-                <td><button className="btn ghost sm" onClick={e => { e.stopPropagation(); setSelected(c); }}><Icon name="arrow" size={12} /></button></td>
+                <td onClick={e => e.stopPropagation()}>
+                  <div className="row" style={{ gap: 4 }}>
+                    <button className="btn ghost sm" onClick={() => setSelected(c)}><Icon name="arrow" size={12} /></button>
+                    <button className="btn ghost sm" title={`Delete ${c.name}`} onClick={() => setDeleteTarget(c)}><Icon name="trash" size={12} /></button>
+                  </div>
+                </td>
               </tr>
             ))}
             {filtered.length === 0 && (
@@ -1061,6 +1086,18 @@ function CustomersScreen({ customers, onAddCustomer, onToast }) {
           { label: "Lifetime value", value: selected.value, bold: true },
           { label: "Tier", value: selected.tier },
         ] : []}
+        actions={
+          <button className="btn ghost sm" onClick={() => { setDeleteTarget(selected); setSelected(null); }}>
+            <Icon name="trash" size={11} /> Delete
+          </button>
+        }
+      />
+      <ConfirmModal
+        open={!!deleteTarget}
+        title="Delete customer"
+        message={deleteTarget ? `Delete ${deleteTarget.name}? This cannot be undone.` : ""}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => { onDeleteCustomer && onDeleteCustomer(deleteTarget.name); setDeleteTarget(null); }}
       />
     </div>
   );
@@ -1165,6 +1202,19 @@ function ApiScreen({ onToast }) {
         ]}
       />
 
+      <ApiCredentialCard
+        title="WhatsApp · OpenWA"
+        subtitle="Customer notifications via WhatsApp Web session"
+        defaultEndpoint="http://localhost:8002/api"
+        keyPlaceholder="Paste OpenWA session API key"
+        onToast={onToast}
+        fields={[
+          { name: "sessionId", label: "Session ID", placeholder: "e.g. asalo-ops", mono: true },
+          { name: "from", label: "Sender number", placeholder: "+61 4 …", mono: true },
+          { name: "webhook", label: "Webhook URL", placeholder: "https://asalo.co/api/hooks/whatsapp", mono: true, default: "https://asalo.co/api/hooks/whatsapp" },
+        ]}
+      />
+
       <div className="panel" style={{ gridColumn: "span 2" }}>
         <div className="panel-h">
           <span className="ttl">Connections</span>
@@ -1174,6 +1224,7 @@ function ApiScreen({ onToast }) {
         <div className="panel-b" style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8 }}>
           {[
             { n: "Website orders (asalo.co)", s: "Receives new orders via webhook", live: true },
+            { n: "WhatsApp · OpenWA", s: "Customer messaging via WhatsApp Web", live: false },
             { n: "Email · Postmark", s: "Transactional email", live: false },
             { n: "Accounting · Xero", s: "Sync invoices & customers", live: false },
             { n: "Slack · #ops-alerts", s: "Push alerts to ops channel", live: false },
@@ -1466,6 +1517,13 @@ function BillingScreen({ customers, onToast }) {
     onToast && onToast({ ttl: "Payment recorded", sub: `${id} · ${paidMethod} · ${paidOn}` });
   }
 
+  const [deleteTarget, setDeleteTarget] = React.useState(null);
+  function deleteInvoice(id) {
+    const inv = invoices.find(i => i.id === id);
+    setInvoices(arr => arr.filter(i => i.id !== id));
+    onToast && onToast({ ttl: "Invoice deleted", sub: inv ? `${inv.id} · ${inv.customer}` : id });
+  }
+
   function exportInvoice(inv) {
     if (!window.XLSX) { onToast && onToast({ ttl: "XLSX not loaded", sub: "" }); return; }
     const ws = XLSX.utils.json_to_sheet([{
@@ -1547,7 +1605,7 @@ function BillingScreen({ customers, onToast }) {
               <th>Due</th>
               <th style={{ textAlign: "right" }}>Amount</th>
               <th>Status</th>
-              <th style={{ width: 130 }}>Actions</th>
+              <th style={{ width: 160 }}>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -1573,6 +1631,9 @@ function BillingScreen({ customers, onToast }) {
                       {/* Export single invoice */}
                       <button className="btn ghost sm" title="Export this invoice" onClick={() => exportInvoice(inv)}>
                         <Icon name="download" size={11} />
+                      </button>
+                      <button className="btn ghost sm" title="Delete this invoice" onClick={() => setDeleteTarget(inv)}>
+                        <Icon name="trash" size={11} />
                       </button>
                       {/* Status action menu */}
                       <div style={{ position: "relative" }}>
@@ -1650,11 +1711,21 @@ function BillingScreen({ customers, onToast }) {
                 {inv.status !== "paid" && (
                   <button className="btn primary sm" onClick={() => { setExpandedId(null); setMarkPaid(inv); }}>✓ Mark as paid</button>
                 )}
+                <button className="btn ghost sm" onClick={() => { setExpandedId(null); setDeleteTarget(inv); }}>
+                  <Icon name="trash" size={11} /> Delete
+                </button>
               </React.Fragment>
             }
           />
         );
       })()}
+      <ConfirmModal
+        open={!!deleteTarget}
+        title="Delete invoice"
+        message={deleteTarget ? `Delete ${deleteTarget.id} · ${deleteTarget.customer}? This cannot be undone.` : ""}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => { deleteInvoice(deleteTarget.id); setDeleteTarget(null); }}
+      />
     </div>
   );
 }

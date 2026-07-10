@@ -36,6 +36,7 @@ const Icon = ({ name, size = 16, stroke = 1.6, ...rest }) => {
     refresh: "M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5",
     barrel: "M5 4h14v16H5zM5 8h14M5 16h14M9 4v16M15 4v16",
     menu: "M3 6h18M3 12h18M3 18h18",
+    trash: "M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14M10 11v6M14 11v6",
   };
   const d = paths[name] || paths.dot;
   return (
@@ -74,4 +75,26 @@ const CargoIcon = ({ type, size = 14 }) => {
   return <Icon name={map[type] || "pkg"} size={size} />;
 };
 
-Object.assign(window, { Icon, Sparkline, StatusPill, CargoIcon });
+const ConfirmModal = ({ open, title, message, confirmLabel = "Delete", onConfirm, onCancel }) => {
+  if (!open) return null;
+  return (
+    <div className="modal-bd" onClick={onCancel}>
+      <div className="modal" style={{ width: 380 }} onClick={e => e.stopPropagation()}>
+        <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 10 }}>
+          <Icon name="trash" size={16} style={{ color: "var(--st-delayed)" }} />
+          <div style={{ fontWeight: 600, flex: 1 }}>{title}</div>
+          <button className="btn ghost sm" onClick={onCancel}><Icon name="x" size={14} /></button>
+        </div>
+        <div style={{ padding: 16, fontSize: 13, color: "var(--fg-1)" }}>{message}</div>
+        <div style={{ padding: "0 16px 16px", display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button className="btn ghost sm" onClick={onCancel}>Cancel</button>
+          <button className="btn sm" style={{ background: "var(--st-delayed)", borderColor: "var(--st-delayed)", color: "#fff" }} onClick={onConfirm}>
+            <Icon name="trash" size={12} /> {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+Object.assign(window, { Icon, Sparkline, StatusPill, CargoIcon, ConfirmModal });
