@@ -23,7 +23,7 @@ const SMS_TEMPLATES = {
 
 const CARGO_TYPES = ["Pallets", "Parcels", "Barrels", "Cold chain"];
 
-const ORDERS = [
+const ORDERS = [/*
   {
     id: "ASL-24871",
     customer: "Maridale Foods Pty",
@@ -168,37 +168,13 @@ const ORDERS = [
     value: "$1,090",
     priority: "normal",
   },
-];
+*/];
 
-const DRIVERS = [
-  { id: "drv-014", name: "K. Daniels", truck: "Truck 14", phone: "+61 4 8800 1144", status: "on_route", route: "Melbourne → Geelong", load: 0.62, hours: "5h 20m / 12h" },
-  { id: "drv-007", name: "M. Okafor", truck: "Truck 07", phone: "+61 4 8800 1077", status: "on_route", route: "Hobart → Launceston", load: 0.84, hours: "3h 10m / 12h" },
-  { id: "drv-022", name: "S. Whittaker", truck: "Truck 22", phone: "+61 4 8800 1022", status: "loading", route: "Perth Yard", load: 0.0, hours: "0h 40m / 12h" },
-  { id: "drv-031", name: "L. Marin", truck: "Truck 31", phone: "+61 4 8800 1031", status: "available", route: "Sydney Hub", load: 0.0, hours: "0h 00m / 12h" },
-  { id: "drv-008", name: "J. Pham", truck: "Truck 08", phone: "+61 4 8800 1008", status: "rest", route: "Adelaide", load: 0.0, hours: "11h 50m / 12h" },
-  { id: "drv-019", name: "R. Iqbal", truck: "Truck 19 (Reefer)", phone: "+61 4 8800 1019", status: "available", route: "Melbourne DC", load: 0.0, hours: "1h 15m / 12h" },
-];
+const DRIVERS = [];
 
-const SMS_LOG = [
-  { ts: "14:42", to: "+61 4 7710 0921", ref: "ASL-24867", trigger: "in_transit", status: "delivered", preview: "Hi Renji, your ASALO order ASL-24867 is on the way. ETA Today 13:50. Driver: M. Okafor." },
-  { ts: "14:31", to: "+61 4 5520 1188", ref: "ASL-24868", trigger: "in_transit", status: "delivered", preview: "Hi Alicia, your ASALO order ASL-24868 is on the way. ETA Today 16:20." },
-  { ts: "14:18", to: "+61 4 0099 4412", ref: "ASL-24869", trigger: "loaded", status: "delivered", preview: "Hi Dispatch, your ASALO order ASL-24869 has been loaded for dispatch." },
-  { ts: "13:56", to: "+61 4 1188 2210", ref: "ASL-24870", trigger: "processing", status: "delivered", preview: "Hi Tom, your ASALO order ASL-24870 is now being processed at our depot." },
-  { ts: "13:44", to: "+61 4 8821 0034", ref: "ASL-24871", trigger: "new", status: "delivered", preview: "Hi Renee, your ASALO order ASL-24871 has been received." },
-  { ts: "13:12", to: "+61 4 3322 5588", ref: "ASL-24866", trigger: "delayed", status: "delivered", preview: "Heads up — your ASALO order ASL-24866 is delayed. New ETA Today 18:30." },
-  { ts: "12:40", to: "+61 4 8800 4221", ref: "ASL-24865", trigger: "delivered", status: "delivered", preview: "Delivered. Your ASALO order ASL-24865 arrived at 15:10. Thank you." },
-  { ts: "11:08", to: "+61 4 8821 0034", ref: "ASL-24864", trigger: "delivered", status: "failed", preview: "Delivered. Your ASALO order ASL-24864 arrived at 11:40." },
-];
+const SMS_LOG = [];
 
-const CUSTOMERS = [
-  { name: "Maridale Foods Pty", contact: "Renee P.", phone: "+61 4 8821 0034", orders: 142, value: "$184k", tier: "Enterprise" },
-  { name: "Northbridge Wines", contact: "Tom K.", phone: "+61 4 1188 2210", orders: 88, value: "$96k", tier: "Pro" },
-  { name: "Bayer Industrial", contact: "Dispatch", phone: "+61 4 0099 4412", orders: 64, value: "$71k", tier: "Pro" },
-  { name: "Greenline Grocers", contact: "Alicia M.", phone: "+61 4 5520 1188", orders: 312, value: "$118k", tier: "Enterprise" },
-  { name: "Coastal Seafoods", contact: "Renji P.", phone: "+61 4 7710 0921", orders: 47, value: "$52k", tier: "Standard" },
-  { name: "Apex Building Supply", contact: "Site office", phone: "+61 4 3322 5588", orders: 28, value: "$38k", tier: "Standard" },
-  { name: "Bright Pharma", contact: "Ops", phone: "+61 4 8800 4221", orders: 76, value: "$140k", tier: "Pro" },
-];
+const CUSTOMERS = [];
 
 Object.assign(window, {
   ORDER_STATUSES,
