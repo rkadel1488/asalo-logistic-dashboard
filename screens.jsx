@@ -1570,12 +1570,12 @@ function BillingScreen({ customers, onToast }) {
     <div class="paid-stamp">PAID</div>
     <div class="top">
       <div>
-        <div class="company-name">ASALO Logistic</div>
-        <div class="company-sub">Melbourne, VIC · Australia<br>info@asalo.com.au · asalo.com.au</div>
+        <div class="company-name">ASA Logistics</div>
+        <div class="company-sub">10 Bendigo Close, Trott Park SA 5158<br>ABN: 46 354 359 058 · info@asalogistics.com.au</div>
       </div>
       <div class="logo-box">
-        <div style="font-size:28px;font-weight:900;color:#1a3a5c;letter-spacing:0.05em">ASALO</div>
-        <div style="font-size:10px;color:#888;letter-spacing:0.15em">LOGISTIC</div>
+        <div style="font-size:28px;font-weight:900;color:#1a3a5c;letter-spacing:0.05em">ASA</div>
+        <div style="font-size:10px;color:#888;letter-spacing:0.15em">LOGISTICS</div>
       </div>
     </div>
     <div class="bill-row">
@@ -1604,14 +1604,17 @@ function BillingScreen({ customers, onToast }) {
     <table>
       <thead><tr><th>Description</th><th>Quantity</th><th>Unit price ($)</th><th>Amount ($)</th></tr></thead>
       <tbody>
-        <tr><td>Freight logistics services — ${inv.customer}</td><td>1</td><td>${inv.amount.toLocaleString()}.00</td><td>${inv.amount.toLocaleString()}.00</td></tr>
+        <tr><td>Freight &amp; logistics services — ${inv.customer}</td><td>1</td><td>$${inv.amount.toLocaleString()}.00</td><td>$${inv.amount.toLocaleString()}.00</td></tr>
         ${inv.notes ? `<tr><td colspan="4" style="color:#888;font-size:12px;padding-top:4px">${inv.notes}</td></tr>` : ''}
+        <tr><td colspan="3" style="color:#888;font-size:12px">GST (10%)</td><td style="color:#888;font-size:12px">$${(inv.amount * 0.1).toFixed(2)}</td></tr>
       </tbody>
-      <tfoot><tr class="total-row"><td colspan="3">Total (AUD):</td><td>$${inv.amount.toLocaleString()}.00</td></tr></tfoot>
+      <tfoot>
+        <tr class="total-row"><td colspan="3">Total incl. GST (AUD):</td><td>$${(inv.amount * 1.1).toFixed(2)}</td></tr>
+      </tfoot>
     </table>
     <div class="footer">
-      <div>ASALO Logistic · Melbourne, VIC, Australia</div>
-      <div>info@asalo.com.au</div>
+      <div>ASA Logistics · 10 Bendigo Close, Trott Park SA 5158 · ABN: 46 354 359 058</div>
+      <div>info@asalogistics.com.au</div>
     </div>
     <script>window.onload=()=>{window.print()}</script>
     </body></html>`;
