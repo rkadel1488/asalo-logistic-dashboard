@@ -30,48 +30,107 @@ function exportOrdersXlsx(orders) {
 }
 
 /* ============ NEW ORDER MODAL ============ */
-const CARGO_TYPES_LIST = ["Pallets", "Parcels", "Barrels", "Cold chain"];
+const SEL_STYLE = { background: "var(--bg-2)", border: "1px solid var(--line)", color: "var(--fg-0)", borderRadius: 4, padding: "6px 8px", fontSize: 12.5, width: "100%" };
+const PALLET_SIZES = ["quarter", "half", "standard", "double"];
+const ADDITIONAL_SVC_OPTS = [
+  { key: "same_day",         label: "Same Day (+$15)"        },
+  { key: "priority_express", label: "Priority Express (+$30)" },
+  { key: "timed_delivery",   label: "Timed Delivery (+$15)"  },
+  { key: "manual_unload",    label: "Manual Unload (+$15)"   },
+];
 
 function NewOrderModal({ open, onClose, onSave }) {
-  const blank = {
+  const WINE_ZONES = Object.keys(window.WINE_PRICING || {});
+  const blankWine = {
+    orderType: "wine",
     customer: "", contactName: "", contact: "",
-    cargo: "Pallets", weight: "", items: "",
-    origin: "", destination: "", distance: "",
-    priority: "normal", temp: "", eta: "", value: "",
+    destination: "Adelaide Metro", addressType: "commercial",
+    qty: "1", collectionType: "included", metroKm: "",
+    additionalServices: [],
+    palletSize: "standard", palletZone: "metro",
+    origin: "Winery / Cellar Door",
+    priority: "normal", eta: "", note: "",
+    // generic fallback
+    cargo: "Pallets", weight: "", items: "", genericDest: "", distance: "",
   };
-  const [form, setForm] = React.useState(blank);
+  const [form, setForm] = React.useState(blankWine);
 
-  React.useEffect(() => { if (open) setForm(blank); }, [open]);
+  React.useEffect(() => { if (open) setForm(blankWine); }, [open]);
 
   if (!open) return null;
 
   function set(k, v) { setForm((f) => ({ ...f, [k]: v })); }
+  function toggleSvc(key) {
+    setForm(f => {
+      const has = f.additionalServices.includes(key);
+      return { ...f, additionalServices: has ? f.additionalServices.filter(x => x !== key) : [...f.additionalServices, key] };
+    });
+  }
+
+  // ── Price calculation ───────────────────────────────────────────
+  const calcPrice = React.useMemo(() => {
+    if (form.orderType === "wine") {
+      return window.calculateWinePrice && window.calculateWinePrice({
+        destination: form.destination,
+        qty: form.qty,
+        addressType: form.addressType,
+        collectionType: form.collectionType,
+        additionalServices: form.additionalServices,
+        metroKm: form.metroKm,
+      });
+    }
+    if (form.orderType === "pallet") {
+      const p = (window.PALLET_PRICING || {})[form.palletSize];
+      return p ? p[form.palletZone] : null;
+    }
+    return form.manualValue ? parseFloat(form.manualValue) : null;
+  }, [form.orderType, form.destination, form.qty, form.addressType, form.collectionType,
+      form.additionalServices, form.metroKm, form.palletSize, form.palletZone, form.manualValue]);
+
+  const priceDisplay = calcPrice === "Quote" ? "Quote required" : calcPrice != null ? `$${calcPrice.toFixed(2)} excl. GST` : null;
 
   function handleSave() {
-    if (!form.customer.trim() || !form.origin.trim() || !form.destination.trim()) return;
-    const maxId = window.ORDERS.reduce((m, o) => {
-      const n = parseInt(o.id.replace("ASL-", ""), 10);
-      return n > m ? n : m;
-    }, 24871);
-    const newId = `ASL-${maxId + 1 + Math.floor(Math.random() * 10)}`;
+    const custOk = form.customer.trim();
+    if (!custOk) return;
+    if (form.orderType === "wine" && !form.destination) return;
+    if (form.orderType === "generic" && !form.genericDest.trim()) return;
+
+    const dest = form.orderType === "wine" ? form.destination
+               : form.orderType === "pallet" ? `${form.palletZone === "metro" ? "Adelaide Metro" : "Regional SA"} (${form.palletSize} pallet)`
+               : form.genericDest.trim();
+
+    const cargo = form.orderType === "wine" ? "Parcels"
+                : form.orderType === "pallet" ? "Pallets"
+                : form.cargo;
+
+    const valueStr = calcPrice === "Quote" ? "Quote" : calcPrice != null ? `$${calcPrice.toFixed(2)}` : form.manualValue ? `$${form.manualValue}` : "";
+
+    const cartons = form.orderType === "wine" ? parseInt(form.qty) || 1 : undefined;
+
     onSave({
-      id: newId,
       customer: form.customer.trim(),
       contactName: form.contactName.trim() || "—",
       contact: form.contact.trim() || "—",
-      cargo: form.cargo,
-      weight: form.weight ? `${form.weight} kg` : "—",
-      items: parseInt(form.items) || 0,
-      origin: form.origin.trim(),
-      destination: form.destination.trim(),
+      origin: form.origin.trim() || "—",
+      destination: dest,
       distance: form.distance ? `${form.distance} km` : "",
+      cargo,
+      weight: form.weight ? `${form.weight} kg` : (cartons ? `${cartons * 15} kg est.` : "—"),
+      items: cartons || parseInt(form.items) || 0,
       priority: form.priority,
-      temp: form.cargo === "Cold chain" && form.temp ? form.temp : undefined,
       eta: form.eta.trim() || "TBD",
-      value: form.value ? `$${form.value}` : "",
+      value: valueStr,
       status: "new",
       placed: "just now",
-      note: "",
+      note: form.note.trim(),
+      // wine-specific fields stored for invoicing
+      ...(form.orderType === "wine" ? {
+        orderType: "wine",
+        addressType: form.addressType,
+        collectionType: form.collectionType,
+        additionalServices: form.additionalServices,
+        cartons,
+      } : {}),
     });
     onClose();
   }
@@ -89,81 +148,189 @@ function NewOrderModal({ open, onClose, onSave }) {
     </div>
   );
 
+  const SectionHead = ({ label }) => (
+    <div style={{ fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--fg-2)", marginTop: 4 }}>{label}</div>
+  );
+
+  const isMetro = (window.WINE_PRICING || {})[form.destination]?.isMetro;
+  const isQuote = (window.WINE_PRICING || {})[form.destination]?.quote;
+  const canSave = form.customer.trim() && (
+    (form.orderType === "wine" && form.destination) ||
+    (form.orderType === "pallet") ||
+    (form.orderType === "generic" && form.genericDest.trim())
+  );
+
   return (
     <div className="modal-bd" onClick={onClose}>
-      <div className="modal" style={{ width: 620, maxHeight: "85vh", overflow: "auto" }} onClick={(e) => e.stopPropagation()}>
+      <div className="modal" style={{ width: 660, maxHeight: "88vh", overflow: "auto" }} onClick={(e) => e.stopPropagation()}>
+
         {/* Header */}
         <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 10 }}>
           <Icon name="plus" />
           <div>
-            <div style={{ fontWeight: 600 }}>New order</div>
-            <div className="muted" style={{ fontSize: 11.5 }}>Fill in the details below — an SMS will fire automatically on status change</div>
+            <div style={{ fontWeight: 600 }}>New order — ASA Logistics</div>
+            <div className="muted" style={{ fontSize: 11.5 }}>Admin pricing calculated automatically · not shown to customers</div>
           </div>
           <div style={{ flex: 1 }} />
           <button className="btn ghost sm" onClick={onClose}><Icon name="x" size={14} /></button>
         </div>
 
         <div style={{ padding: 18, display: "flex", flexDirection: "column", gap: 14 }}>
+
+          {/* Order type */}
+          <SectionHead label="Order type" />
+          <div className="seg">
+            {[["wine","🍷 Wine Delivery"],["pallet","📦 Pallet Transport"],["generic","Other / Manual"]].map(([k,l]) => (
+              <button key={k} className={form.orderType === k ? "on" : ""} onClick={() => set("orderType", k)}>{l}</button>
+            ))}
+          </div>
+
           {/* Customer */}
-          <div style={{ fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--fg-2)" }}>Customer</div>
+          <SectionHead label="Customer" />
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-            {field("Company name", "customer", { required: true, placeholder: "e.g. Greenline Grocers" })}
-            {field("Contact name", "contactName", { placeholder: "e.g. Alicia M." })}
+            {field("Company / Customer name", "customer", { required: true, placeholder: "e.g. Penfolds Barossa" })}
+            {field("Contact name", "contactName", { placeholder: "e.g. Sarah M." })}
             {field("Phone", "contact", { placeholder: "+61 4…", mono: true })}
           </div>
 
-          {/* Route */}
-          <div style={{ fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--fg-2)", marginTop: 4 }}>Route</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 120px", gap: 10 }}>
-            {field("Origin", "origin", { required: true, placeholder: "e.g. Melbourne DC" })}
-            {field("Destination", "destination", { required: true, placeholder: "e.g. Geelong West" })}
-            {field("Distance (km)", "distance", { placeholder: "78", mono: true })}
-          </div>
-
-          {/* Cargo */}
-          <div style={{ fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--fg-2)", marginTop: 4 }}>Cargo</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 120px 120px", gap: 10 }}>
+          {/* ── WINE DELIVERY ── */}
+          {form.orderType === "wine" && <>
+            <SectionHead label="Delivery details" />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 140px", gap: 10 }}>
+              <div className="field">
+                <label>Destination zone<span style={{ color: "var(--st-delayed)", marginLeft: 3 }}>*</span></label>
+                <select value={form.destination} onChange={e => set("destination", e.target.value)} style={SEL_STYLE}>
+                  {WINE_ZONES.map(z => <option key={z}>{z}</option>)}
+                </select>
+              </div>
+              <div className="field">
+                <label>Address type<span style={{ color: "var(--st-delayed)", marginLeft: 3 }}>*</span></label>
+                <div className="seg" style={{ width: "100%" }}>
+                  {[["commercial","Commercial"],["residential","Residential"]].map(([k,l]) => (
+                    <button key={k} className={form.addressType === k ? "on" : ""} onClick={() => set("addressType", k)} style={{ flex: 1 }}>{l}</button>
+                  ))}
+                </div>
+              </div>
+              <div className="field">
+                <label>Qty (cartons)<span style={{ color: "var(--st-delayed)", marginLeft: 3 }}>*</span></label>
+                <input type="number" min="1" max="20" value={form.qty} onChange={e => set("qty", e.target.value)} className="mono" />
+              </div>
+            </div>
+            {isMetro && (
+              <div style={{ display: "grid", gridTemplateColumns: "200px 1fr", gap: 10 }}>
+                <div className="field">
+                  <label>Delivery distance (km)</label>
+                  <input type="number" placeholder="e.g. 32" value={form.metroKm} onChange={e => set("metroKm", e.target.value)} className="mono" />
+                </div>
+                <div className="hint" style={{ alignSelf: "flex-end", paddingBottom: 4 }}>0–25 km included · 26–40 +$8 · 41–60 +$15 · 61–80 +$25 · over 80 km $0.80/km</div>
+              </div>
+            )}
             <div className="field">
-              <label>Cargo type<span style={{ color: "var(--st-delayed)", marginLeft: 3 }}>*</span></label>
-              <select value={form.cargo} onChange={(e) => set("cargo", e.target.value)}
-                style={{ background: "var(--bg-2)", border: "1px solid var(--line)", color: "var(--fg-0)", borderRadius: 4, padding: "6px 8px", fontSize: 12.5 }}>
-                {CARGO_TYPES_LIST.map((c) => <option key={c}>{c}</option>)}
-              </select>
+              <label>Delivery address / notes</label>
+              <input placeholder="Street address, suburb, postcode" value={form.note} onChange={e => set("note", e.target.value)} />
             </div>
-            {field("Weight (kg)", "weight", { placeholder: "180", mono: true })}
-            {field("Items", "items", { placeholder: "64", mono: true })}
-          </div>
-          {form.cargo === "Cold chain" && (
-            <div style={{ display: "grid", gridTemplateColumns: "200px 1fr", gap: 10 }}>
-              {field("Temperature", "temp", { placeholder: "e.g. −4°C or +2°C", mono: true })}
-            </div>
-          )}
 
-          {/* Scheduling & priority */}
-          <div style={{ fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--fg-2)", marginTop: 4 }}>Scheduling</div>
+            <SectionHead label="Collection" />
+            <div className="seg">
+              {[["included","Standard (included)"],["cellar_door","Cellar door (+$15)"],["additional","Additional winery (+$10)"],["multi_winery","Multi-winery (from +$60)"]].map(([k,l]) => (
+                <button key={k} className={form.collectionType === k ? "on" : ""} onClick={() => set("collectionType", k)}>{l}</button>
+              ))}
+            </div>
+
+            <SectionHead label="Additional services" />
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              {ADDITIONAL_SVC_OPTS.map(({ key, label }) => (
+                <label key={key} className="row" style={{ gap: 6, fontSize: 12.5, cursor: "pointer", color: "var(--fg-1)" }}>
+                  <input type="checkbox" checked={form.additionalServices.includes(key)} onChange={() => toggleSvc(key)} />
+                  {label}
+                </label>
+              ))}
+            </div>
+          </>}
+
+          {/* ── PALLET TRANSPORT ── */}
+          {form.orderType === "pallet" && <>
+            <SectionHead label="Pallet details" />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+              <div className="field">
+                <label>Pallet size<span style={{ color: "var(--st-delayed)", marginLeft: 3 }}>*</span></label>
+                <select value={form.palletSize} onChange={e => set("palletSize", e.target.value)} style={SEL_STYLE}>
+                  <option value="quarter">Quarter pallet</option>
+                  <option value="half">Half pallet</option>
+                  <option value="standard">Standard pallet</option>
+                  <option value="double">Double pallet</option>
+                </select>
+              </div>
+              <div className="field">
+                <label>Zone</label>
+                <div className="seg" style={{ width: "100%" }}>
+                  {[["metro","Metro"],["regional","Regional"]].map(([k,l]) => (
+                    <button key={k} className={form.palletZone === k ? "on" : ""} onClick={() => set("palletZone", k)} style={{ flex: 1 }}>{l}</button>
+                  ))}
+                </div>
+              </div>
+              {field("Destination", "genericDest", { placeholder: "e.g. Barossa Valley" })}
+            </div>
+            <div className="field">
+              <label>Notes / delivery address</label>
+              <input placeholder="Street address, suburb, postcode" value={form.note} onChange={e => set("note", e.target.value)} />
+            </div>
+          </>}
+
+          {/* ── GENERIC / OTHER ── */}
+          {form.orderType === "generic" && <>
+            <SectionHead label="Route" />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 120px", gap: 10 }}>
+              {field("Origin", "origin", { required: true, placeholder: "e.g. Melbourne DC" })}
+              {field("Destination", "genericDest", { required: true, placeholder: "e.g. Geelong West" })}
+              {field("Distance (km)", "distance", { placeholder: "78", mono: true })}
+            </div>
+            <SectionHead label="Cargo" />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 120px 120px", gap: 10 }}>
+              <div className="field">
+                <label>Cargo type</label>
+                <select value={form.cargo} onChange={e => set("cargo", e.target.value)} style={SEL_STYLE}>
+                  {["Pallets","Parcels","Barrels","Cold chain"].map(c => <option key={c}>{c}</option>)}
+                </select>
+              </div>
+              {field("Weight (kg)", "weight", { placeholder: "180", mono: true })}
+              {field("Items", "items", { placeholder: "64", mono: true })}
+            </div>
+            {field("Value ($AUD excl. GST)", "manualValue", { placeholder: "0.00", mono: true })}
+          </>}
+
+          {/* Scheduling */}
+          <SectionHead label="Scheduling" />
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+            {field("Origin / pickup", "origin", { placeholder: "Winery / Cellar Door" })}
             {field("ETA", "eta", { placeholder: "e.g. Tomorrow 14:00" })}
-            {field("Value ($)", "value", { placeholder: "3420", mono: true })}
             <div className="field">
               <label>Priority</label>
               <div className="seg" style={{ width: "100%" }}>
-                {["normal", "high"].map((p) => (
+                {["normal","high"].map(p => (
                   <button key={p} className={form.priority === p ? "on" : ""} onClick={() => set("priority", p)} style={{ flex: 1, textTransform: "capitalize" }}>{p}</button>
                 ))}
               </div>
             </div>
           </div>
 
-          <div className="hint">Fields marked <span style={{ color: "var(--st-delayed)" }}>*</span> are required. Order will be created with status <strong>New</strong>.</div>
+          {/* Price preview */}
+          {priceDisplay && (
+            <div style={{ background: "var(--bg-2)", border: "1px solid var(--line)", borderRadius: 6, padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={{ fontSize: 12, color: "var(--fg-2)" }}>Calculated price (admin only — not shown to customer)</span>
+              <span style={{ fontWeight: 700, fontSize: 16, color: "var(--accent)" }}>{priceDisplay}</span>
+            </div>
+          )}
+          {isQuote && (
+            <div className="hint" style={{ color: "var(--st-delayed)" }}>This destination requires a manual quote (ferry/special logistics). Contact the customer directly.</div>
+          )}
+
+          <div className="hint">Fields marked <span style={{ color: "var(--st-delayed)" }}>*</span> are required. Order will be created with status <strong>New</strong>. All prices exclude GST.</div>
         </div>
 
         <div style={{ padding: 14, borderTop: "1px solid var(--line)", display: "flex", gap: 8, justifyContent: "flex-end" }}>
           <button className="btn" onClick={onClose}>Cancel</button>
-          <button
-            className="btn primary"
-            onClick={handleSave}
-            disabled={!form.customer.trim() || !form.origin.trim() || !form.destination.trim()}
-          >
+          <button className="btn primary" onClick={handleSave} disabled={!canSave}>
             <Icon name="plus" size={13} /> Create order
           </button>
         </div>

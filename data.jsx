@@ -23,6 +23,71 @@ const SMS_TEMPLATES = {
 
 const CARGO_TYPES = ["Pallets", "Parcels", "Barrels", "Cold chain"];
 
+// ── ASA Logistics Wine Delivery Tariff (excl. GST) ──────────────────────────
+// Carton tier indices: [1, 2, 3-5, 6-10, 11-20]
+const WINE_PRICING = {
+  "Adelaide Metro":  { commercial: [18, 32, 65, 120, 220],   residential: [20, 36, 75, 135, 245],   isMetro: true  },
+  "Adelaide Hills":  { commercial: [25, 45, 105, 190, 350],  residential: [28, 50, 118, 215, 395]                  },
+  "McLaren Vale":    { commercial: [28, 50, 118, 215, 395],  residential: [32, 57, 135, 245, 450]                  },
+  "Barossa Valley":  { commercial: [35, 63, 149, 270, 495],  residential: [40, 72, 170, 308, 565]                  },
+  "Tanunda":         { commercial: [35, 63, 149, 270, 495],  residential: [40, 72, 170, 308, 565]                  },
+  "Nuriootpa":       { commercial: [36, 65, 154, 280, 515],  residential: [41, 74, 177, 321, 590]                  },
+  "Angaston":        { commercial: [38, 68, 161, 295, 540],  residential: [43, 77, 185, 338, 620]                  },
+  "Langhorne Creek": { commercial: [35, 63, 149, 270, 495],  residential: [40, 72, 170, 308, 565]                  },
+  "Murray Bridge":   { commercial: [35, 63, 149, 270, 495],  residential: [40, 72, 170, 308, 565]                  },
+  "Victor Harbor":   { commercial: [40, 72, 170, 310, 570],  residential: [46, 82, 194, 354, 650]                  },
+  "Goolwa":          { commercial: [42, 76, 179, 325, 600],  residential: [48, 87, 205, 372, 685]                  },
+  "Clare Valley":    { commercial: [50, 90, 213, 390, 715],  residential: [57, 102, 244, 446, 820]                 },
+  "Yorke Peninsula": { commercial: [60, 108, 255, 470, 860], residential: [69, 124, 293, 540, 990]                 },
+  "Riverland":       { commercial: [75, 135, 319, 590, 1080],residential: [86, 155, 367, 678, 1242]                },
+  "Port Augusta":    { commercial: [95, 171, 404, 760, 1395],residential: [109, 196, 464, 873, 1604]               },
+  "Mount Gambier":   { commercial: [110, 198, 468, 870, 1595],residential: [127, 228, 538, 1001, 1834]             },
+  "Kangaroo Island": { quote: true },
+  "Port Lincoln":    { quote: true },
+  "Ceduna":          { quote: true },
+  "Whyalla":         { quote: true },
+};
+
+const COLLECTION_FEES = {
+  included:     0,
+  cellar_door:  15,
+  additional:   10,
+  multi_winery: 60,
+};
+
+const ADDITIONAL_SERVICE_FEES = {
+  same_day:         15,
+  priority_express: 30,
+  timed_delivery:   15,
+  manual_unload:    15,
+};
+
+const PALLET_PRICING = {
+  quarter:  { metro: 35, regional: 60  },
+  half:     { metro: 50, regional: 80  },
+  standard: { metro: 75, regional: 125 },
+  double:   { metro: 130, regional: 220 },
+};
+
+function calculateWinePrice({ destination, qty, addressType, collectionType, additionalServices, metroKm }) {
+  const zone = WINE_PRICING[destination];
+  if (!zone) return null;
+  if (zone.quote) return "Quote";
+  const n = parseInt(qty) || 1;
+  const tierIdx = n <= 1 ? 0 : n <= 2 ? 1 : n <= 5 ? 2 : n <= 10 ? 3 : 4;
+  let price = (zone[addressType] || zone.commercial)[tierIdx];
+  if (zone.isMetro && metroKm) {
+    const km = parseFloat(metroKm) || 0;
+    if (km > 80) price += km * 0.80;
+    else if (km > 60) price += 25;
+    else if (km > 40) price += 15;
+    else if (km > 25) price += 8;
+  }
+  price += COLLECTION_FEES[collectionType] || 0;
+  (additionalServices || []).forEach(s => { price += ADDITIONAL_SERVICE_FEES[s] || 0; });
+  return price;
+}
+
 const ORDERS = [/*
   {
     id: "ASL-24871",
@@ -185,4 +250,9 @@ Object.assign(window, {
   DRIVERS,
   SMS_LOG,
   CUSTOMERS,
+  WINE_PRICING,
+  COLLECTION_FEES,
+  ADDITIONAL_SERVICE_FEES,
+  PALLET_PRICING,
+  calculateWinePrice,
 });
