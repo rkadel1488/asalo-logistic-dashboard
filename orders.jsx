@@ -443,33 +443,40 @@ function OrdersScreen({ orders, onSelect, selectedId, onAdvance, density, onNewO
 
   return (
     <div style={{ padding: 18, display: "flex", flexDirection: "column", gap: 14, minHeight: "100%" }}>
-      {/* KPIs */}
-      <div className="kpis">
-        <div className="kpi">
-          <div className="lbl">Today's orders</div>
-          <div className="val">142</div>
-          <div className="delta up">▲ 12% vs yesterday</div>
-          <Sparkline data={[8, 12, 10, 14, 18, 22, 26, 24, 30, 28, 34, 38]} />
-        </div>
-        <div className="kpi">
-          <div className="lbl">In transit</div>
-          <div className="val">38</div>
-          <div className="delta">14 reefer · 24 dry</div>
-          <Sparkline data={[12, 18, 22, 26, 30, 28, 32, 35, 33, 36, 38, 38]} />
-        </div>
-        <div className="kpi">
-          <div className="lbl">On-time rate</div>
-          <div className="val">96.4%</div>
-          <div className="delta up">▲ 0.8 pp this week</div>
-          <Sparkline data={[92, 93, 91, 94, 95, 94, 96, 95, 96, 97, 96, 96]} />
-        </div>
-        <div className="kpi">
-          <div className="lbl">SMS dispatched · 24h</div>
-          <div className="val">418</div>
-          <div className="delta down">2 failed · retry queued</div>
-          <Sparkline data={[20, 32, 28, 40, 44, 38, 42, 50, 48, 52, 56, 62]} />
-        </div>
-      </div>
+      {/* KPIs — live from orders */}
+      {(() => {
+        const totalOrders   = orders.length;
+        const inTransit     = orders.filter(o => o.status === "in_transit").length;
+        const coldChain     = orders.filter(o => o.status === "in_transit" && (o.cargo === "Cold chain" || o.cargo === "Cold Storage")).length;
+        const dryTransit    = inTransit - coldChain;
+        const delivered     = orders.filter(o => o.status === "delivered").length;
+        const delayed       = orders.filter(o => o.status === "delayed").length;
+        const onTimeRate    = delivered + delayed === 0 ? null : Math.round((delivered / (delivered + delayed)) * 1000) / 10;
+        return (
+          <div className="kpis">
+            <div className="kpi">
+              <div className="lbl">Total orders</div>
+              <div className="val">{totalOrders}</div>
+              <div className="delta">{counts.new} new · {counts.processing} processing</div>
+            </div>
+            <div className="kpi">
+              <div className="lbl">In transit</div>
+              <div className="val">{inTransit}</div>
+              <div className="delta">{coldChain > 0 ? `${coldChain} cold chain · ` : ""}{dryTransit} dry</div>
+            </div>
+            <div className="kpi">
+              <div className="lbl">On-time rate</div>
+              <div className="val">{onTimeRate !== null ? `${onTimeRate}%` : "—"}</div>
+              <div className="delta">{delivered} delivered · {delayed} delayed</div>
+            </div>
+            <div className="kpi">
+              <div className="lbl">Delivered</div>
+              <div className="val">{delivered}</div>
+              <div className="delta">{totalOrders > 0 ? `${Math.round(delivered / totalOrders * 100)}% completion rate` : "No orders yet"}</div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Toolbar */}
       <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
