@@ -1360,14 +1360,7 @@ function BarChart() {
 }
 
 /* ============== BILLING ============== */
-const SEED_INVOICES = [
-  { id: "INV-1421", customer: "Maridale Foods Pty",   issued: "Apr 22", due: "May 22", amount: 8420,  status: "open",    paidOn: null, paidMethod: null, notes: "" },
-  { id: "INV-1420", customer: "Northbridge Wines",    issued: "Apr 21", due: "May 21", amount: 5180,  status: "open",    paidOn: null, paidMethod: null, notes: "" },
-  { id: "INV-1419", customer: "Greenline Grocers",    issued: "Apr 18", due: "May 18", amount: 12640, status: "paid",    paidOn: "Apr 30", paidMethod: "Bank transfer", notes: "" },
-  { id: "INV-1418", customer: "Apex Building Supply", issued: "Apr 12", due: "Apr 26", amount: 1260,  status: "overdue", paidOn: null, paidMethod: null, notes: "" },
-  { id: "INV-1417", customer: "Bayer Industrial",     issued: "Apr 10", due: "Apr 24", amount: 2940,  status: "overdue", paidOn: null, paidMethod: null, notes: "" },
-  { id: "INV-1416", customer: "Bright Pharma",        issued: "Apr 06", due: "May 06", amount: 2260,  status: "paid",    paidOn: "Apr 20", paidMethod: "Credit card", notes: "" },
-];
+// Invoices are stored in Firestore — no seed data
 
 function NewInvoiceModal({ open, onClose, onSave, customers }) {
   const today = new Date();
@@ -1475,12 +1468,23 @@ function MarkPaidModal({ invoice, onClose, onSave }) {
 }
 
 function BillingScreen({ customers, onToast }) {
-  const [invoices, setInvoices] = React.useState(SEED_INVOICES);
+  const [invoices, setInvoices] = React.useState([]);
+  const [invoicesLoading, setInvoicesLoading] = React.useState(true);
   const [showNew, setShowNew] = React.useState(false);
   const [markPaid, setMarkPaid] = React.useState(null);
   const [expandedId, setExpandedId] = React.useState(null);
   const [statusFilter, setStatusFilter] = React.useState("all");
-  const [actionMenu, setActionMenu] = React.useState(null); // invoice id with open menu
+  const [actionMenu, setActionMenu] = React.useState(null);
+
+  // Firestore real-time invoices subscription
+  React.useEffect(() => {
+    const col = window.db.collection("invoices");
+    const unsub = col.orderBy("createdAt", "desc").onSnapshot(snap => {
+      setInvoices(snap.docs.map(d => ({ ...d.data(), id: d.id })));
+      setInvoicesLoading(false);
+    }, () => setInvoicesLoading(false));
+    return () => unsub();
+  }, []);
 
   const statusColors = {
     open:     "var(--st-new)",
@@ -1500,27 +1504,31 @@ function BillingScreen({ customers, onToast }) {
   invoices.forEach(i => { counts[i.status] = (counts[i.status] || 0) + 1; });
 
   function addInvoice({ customer, amount, issued, due, notes }) {
-    const maxNum = invoices.reduce((m, i) => { const n = parseInt(i.id.replace("INV-", "")); return n > m ? n : m; }, 1421);
-    const newInv = { id: `INV-${maxNum + 1}`, customer, amount, issued, due, status: "open", paidOn: null, paidMethod: null, notes };
-    setInvoices(arr => [newInv, ...arr]);
-    onToast && onToast({ ttl: "Invoice created", sub: `${newInv.id} · ${customer} · $${amount.toLocaleString()}` });
+    const maxNum = invoices.reduce((m, i) => { const n = parseInt((i.id || "INV-1000").replace("INV-", "")); return n > m ? n : m; }, 1000);
+    const invId = `INV-${maxNum + 1}`;
+    window.db.collection("invoices").doc(invId).set({
+      customer, amount, issued, due, notes,
+      status: "open", paidOn: null, paidMethod: null,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    onToast && onToast({ ttl: "Invoice created", sub: `${invId} · ${customer} · $${amount.toLocaleString()}` });
   }
 
   function setStatus(id, status) {
-    setInvoices(arr => arr.map(i => i.id === id ? { ...i, status, paidOn: null, paidMethod: null } : i));
+    window.db.collection("invoices").doc(id).update({ status, paidOn: null, paidMethod: null });
     setActionMenu(null);
     onToast && onToast({ ttl: `Invoice marked ${status.replace("_", " ")}`, sub: id });
   }
 
   function confirmPaid(id, paidOn, paidMethod) {
-    setInvoices(arr => arr.map(i => i.id === id ? { ...i, status: "paid", paidOn, paidMethod } : i));
+    window.db.collection("invoices").doc(id).update({ status: "paid", paidOn, paidMethod });
     onToast && onToast({ ttl: "Payment recorded", sub: `${id} · ${paidMethod} · ${paidOn}` });
   }
 
   const [deleteTarget, setDeleteTarget] = React.useState(null);
   function deleteInvoice(id) {
     const inv = invoices.find(i => i.id === id);
-    setInvoices(arr => arr.filter(i => i.id !== id));
+    window.db.collection("invoices").doc(id).delete();
     onToast && onToast({ ttl: "Invoice deleted", sub: inv ? `${inv.id} · ${inv.customer}` : id });
   }
 
@@ -1640,6 +1648,13 @@ function BillingScreen({ customers, onToast }) {
     document.addEventListener("click", handler);
     return () => document.removeEventListener("click", handler);
   }, []);
+
+  if (invoicesLoading) return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", flexDirection: "column", gap: 12 }}>
+      <Icon name="refresh" size={22} style={{ opacity: 0.4, animation: "spin 1s linear infinite" }} />
+      <div className="muted" style={{ fontSize: 13 }}>Loading invoices…</div>
+    </div>
+  );
 
   return (
     <div style={{ padding: 18, display: "flex", flexDirection: "column", gap: 14 }}>
