@@ -705,6 +705,18 @@ function OrderDrawer({ order, onClose, onAdvance, onSendCustom, onDelete }) {
           </div>
         </div>
 
+        {(order.note || order.abn || order.billingAddress || order.billingEmail) && (
+          <div className="panel">
+            <div className="panel-h"><span className="ttl">Order details</span></div>
+            <div className="panel-b" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontSize: 13 }}>
+              {order.abn && <div><div className="lbl-mini">ABN</div><div className="mono">{order.abn}</div></div>}
+              {order.billingEmail && <div><div className="lbl-mini">Billing email</div><div className="mono">{order.billingEmail}</div></div>}
+              {order.billingAddress && <div style={{ gridColumn: "1 / -1" }}><div className="lbl-mini">Billing address</div><div>{order.billingAddress}</div></div>}
+              {order.note && <div style={{ gridColumn: "1 / -1" }}><div className="lbl-mini">Note</div><div className="muted">{order.note}</div></div>}
+            </div>
+          </div>
+        )}
+
         <div className="panel">
           <div className="panel-h">
             <span className="ttl">Lifecycle</span>

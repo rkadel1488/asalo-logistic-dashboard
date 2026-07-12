@@ -1479,8 +1479,10 @@ function BillingScreen({ customers, onToast }) {
   // Firestore real-time invoices subscription
   React.useEffect(() => {
     const col = window.db.collection("invoices");
-    const unsub = col.orderBy("createdAt", "desc").onSnapshot(snap => {
-      setInvoices(snap.docs.map(d => ({ ...d.data(), id: d.id })));
+    const unsub = col.onSnapshot(snap => {
+      const docs = snap.docs.map(d => ({ ...d.data(), id: d.id }));
+      docs.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      setInvoices(docs);
       setInvoicesLoading(false);
     }, () => setInvoicesLoading(false));
     return () => unsub();
