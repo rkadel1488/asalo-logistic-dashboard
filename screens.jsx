@@ -36,7 +36,7 @@ function PODScreen({ orders, onToast }) {
     const pos = getPos(canvas, e);
     ctx.lineWidth = 2;
     ctx.lineCap = "round";
-    ctx.strokeStyle = "var(--fg-0, #fff)";
+    ctx.strokeStyle = "#111";
     ctx.lineTo(pos.x, pos.y);
     ctx.stroke();
   }
@@ -154,7 +154,7 @@ function PODScreen({ orders, onToast }) {
               <canvas
                 ref={canvasRef}
                 width={620} height={180}
-                style={{ width: "100%", height: 180, borderRadius: 8, border: "1px solid var(--line)", background: "var(--bg-0)", cursor: "crosshair", touchAction: "none" }}
+                style={{ width: "100%", height: 180, borderRadius: 8, border: "1px solid var(--line)", background: "#fff", cursor: "crosshair", touchAction: "none" }}
                 onMouseDown={startDraw} onMouseMove={draw} onMouseUp={stopDraw} onMouseLeave={stopDraw}
                 onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={stopDraw}
               />
