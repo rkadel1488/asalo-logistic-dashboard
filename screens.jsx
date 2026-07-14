@@ -11,7 +11,10 @@ function compressImage(dataUrl, maxW, maxH, quality) {
       if (h > maxH) { w = Math.round(w * maxH / h); h = maxH; }
       const c = document.createElement("canvas");
       c.width = w; c.height = h;
-      c.getContext("2d").drawImage(img, 0, 0, w, h);
+      const ctx = c.getContext("2d");
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(img, 0, 0, w, h);
       resolve(c.toDataURL("image/jpeg", quality));
     };
     img.src = dataUrl;
