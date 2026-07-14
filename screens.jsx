@@ -1,4 +1,180 @@
-// Tracking, Fleet, Notifications, and other screens
+// Tracking, Fleet, Notifications, POD, and other screens
+
+/* ============== PROOF OF DELIVERY ============== */
+
+function PODScreen({ orders, onToast }) {
+  const [selectedOrderId, setSelectedOrderId] = React.useState("");
+  const [photo, setPhoto] = React.useState(null);
+  const [saving, setSaving] = React.useState(false);
+  const [saved, setSaved] = React.useState(false);
+  const canvasRef = React.useRef(null);
+  const drawingRef = React.useRef(false);
+  const fileRef = React.useRef(null);
+
+  const order = orders.find(o => o.id === selectedOrderId);
+
+  // Signature pad logic
+  function getPos(canvas, e) {
+    const r = canvas.getBoundingClientRect();
+    const src = e.touches ? e.touches[0] : e;
+    return { x: src.clientX - r.left, y: src.clientY - r.top };
+  }
+  function startDraw(e) {
+    e.preventDefault();
+    drawingRef.current = true;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    const pos = getPos(canvas, e);
+    ctx.beginPath();
+    ctx.moveTo(pos.x, pos.y);
+  }
+  function draw(e) {
+    e.preventDefault();
+    if (!drawingRef.current) return;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    const pos = getPos(canvas, e);
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "var(--fg-0, #fff)";
+    ctx.lineTo(pos.x, pos.y);
+    ctx.stroke();
+  }
+  function stopDraw(e) { drawingRef.current = false; }
+  function clearSig() {
+    const canvas = canvasRef.current;
+    canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
+  }
+
+  function handlePhoto(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => setPhoto(ev.target.result);
+    reader.readAsDataURL(file);
+  }
+
+  async function handleSave() {
+    if (!order) return;
+    const canvas = canvasRef.current;
+    const sig = canvas.toDataURL("image/png");
+    setSaving(true);
+    try {
+      await window.db.collection("pod").doc(order.id).set({
+        orderId: order.id,
+        customer: order.customer,
+        contactName: order.contactName || "",
+        destination: order.destination || "",
+        photo: photo || null,
+        signature: sig,
+        submittedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+      await window.db.collection("orders").doc(order.id).update({ status: "delivered", podSubmitted: true });
+      setSaved(true);
+      onToast && onToast({ ttl: "POD saved", sub: `${order.id} · ${order.customer} · marked delivered` });
+    } catch(err) {
+      onToast && onToast({ ttl: "Save failed", sub: err.message });
+    }
+    setSaving(false);
+  }
+
+  return (
+    <div style={{ padding: 24, maxWidth: 700, margin: "0 auto", display: "flex", flexDirection: "column", gap: 20 }}>
+      <div>
+        <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>Proof of Delivery</div>
+        <div className="muted" style={{ fontSize: 13 }}>Select an order, capture a photo, and collect a customer signature.</div>
+      </div>
+
+      {/* Order selector */}
+      <div className="panel">
+        <div className="panel-h"><span className="ttl">Select order</span></div>
+        <div className="panel-b">
+          <div className="field">
+            <label>Order number</label>
+            <select value={selectedOrderId} onChange={e => { setSelectedOrderId(e.target.value); setSaved(false); setPhoto(null); clearSig(); }}
+              style={{ width: "100%", padding: "8px 10px", borderRadius: 7, border: "1px solid var(--line)", background: "var(--bg-1)", color: "var(--fg-0)", fontSize: 13 }}>
+              <option value="">— Choose an order —</option>
+              {orders.filter(o => o.status !== "delivered").map(o => (
+                <option key={o.id} value={o.id}>{o.id} · {o.customer} · {o.status}</option>
+              ))}
+            </select>
+          </div>
+
+          {order && (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginTop: 14, fontSize: 13 }}>
+              <div><div className="lbl-mini">Customer</div><div style={{ fontWeight: 600 }}>{order.customer}</div><div className="muted">{order.contactName}</div></div>
+              <div><div className="lbl-mini">Destination</div><div>{order.destination || "—"}</div></div>
+              <div><div className="lbl-mini">Cargo</div><div>{order.cargo} · {order.weight}</div></div>
+              {order.deliveryAddress && <div style={{ gridColumn: "1/-1" }}><div className="lbl-mini">Delivery address</div><div>{order.deliveryAddress}</div></div>}
+              {order.collectionType && <div><div className="lbl-mini">Collection</div><div>{order.collectionType}</div></div>}
+              {order.additionalServices && <div style={{ gridColumn: "1/-1" }}><div className="lbl-mini">Additional services</div><div>{order.additionalServices}</div></div>}
+              {order.note && <div style={{ gridColumn: "1/-1" }}><div className="lbl-mini">Note</div><div className="muted">{order.note}</div></div>}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {order && (
+        <React.Fragment>
+          {/* Photo capture */}
+          <div className="panel">
+            <div className="panel-h"><span className="ttl">Photo evidence</span></div>
+            <div className="panel-b" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {photo ? (
+                <div style={{ position: "relative" }}>
+                  <img src={photo} style={{ width: "100%", borderRadius: 8, maxHeight: 300, objectFit: "cover" }} />
+                  <button className="btn ghost sm" onClick={() => setPhoto(null)}
+                    style={{ position: "absolute", top: 8, right: 8, background: "rgba(0,0,0,0.6)" }}>
+                    <Icon name="x" size={12} /> Remove
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display: "flex", gap: 10 }}>
+                  <button className="btn" onClick={() => { fileRef.current.setAttribute("capture","environment"); fileRef.current.click(); }}>
+                    <Icon name="camera" size={14} /> Take photo
+                  </button>
+                  <button className="btn ghost" onClick={() => { fileRef.current.removeAttribute("capture"); fileRef.current.click(); }}>
+                    <Icon name="upload" size={14} /> Upload image
+                  </button>
+                </div>
+              )}
+              <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handlePhoto} />
+            </div>
+          </div>
+
+          {/* Signature pad */}
+          <div className="panel">
+            <div className="panel-h">
+              <span className="ttl">Customer signature</span>
+              <div className="sp" />
+              <button className="btn ghost sm" onClick={clearSig}><Icon name="x" size={12} /> Clear</button>
+            </div>
+            <div className="panel-b">
+              <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>Sign below using your finger or mouse</div>
+              <canvas
+                ref={canvasRef}
+                width={620} height={180}
+                style={{ width: "100%", height: 180, borderRadius: 8, border: "1px solid var(--line)", background: "var(--bg-0)", cursor: "crosshair", touchAction: "none" }}
+                onMouseDown={startDraw} onMouseMove={draw} onMouseUp={stopDraw} onMouseLeave={stopDraw}
+                onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={stopDraw}
+              />
+            </div>
+          </div>
+
+          {saved ? (
+            <div style={{ padding: 16, borderRadius: 10, background: "oklch(0.74 0.14 145 / 0.12)", border: "1px solid oklch(0.74 0.14 145 / 0.3)", color: "oklch(0.74 0.14 145)", fontWeight: 600, textAlign: "center" }}>
+              POD submitted — order marked as Delivered
+            </div>
+          ) : (
+            <button className="btn primary" style={{ alignSelf: "flex-end", padding: "10px 24px" }} onClick={handleSave} disabled={saving}>
+              {saving ? "Saving…" : <React.Fragment><Icon name="check" size={14} /> Submit POD &amp; Mark Delivered</React.Fragment>}
+            </button>
+          )}
+        </React.Fragment>
+      )}
+    </div>
+  );
+}
 
 /* ============== LIVE TRACKING ============== */
 

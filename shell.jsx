@@ -2,6 +2,7 @@
 
 const NAV = [
   { section: "Operations" },
+  { key: "pod", label: "POD", icon: "check" },
   { key: "orders", label: "Orders", icon: "inbox" },
   { key: "tracking", label: "Live Tracking", icon: "map" },
   { key: "fleet", label: "Fleet & Drivers", icon: "truck" },

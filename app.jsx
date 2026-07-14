@@ -132,6 +132,7 @@ function App() {
   }
 
   const crumbsByView = {
+    pod:           ["Operations", "POD"],
     orders:        ["Operations", "Orders"],
     tracking:      ["Operations", "Live Tracking"],
     fleet:         ["Operations", "Fleet & Drivers"],
@@ -179,6 +180,7 @@ function App() {
               onToast={pushToast}
             />
           )}
+          {view === "pod"           && <PODScreen orders={orders} onToast={pushToast} />}
           {view === "tracking"      && <TrackingScreen orders={orders} drivers={drivers} assignments={assignments} onAssign={handleAssign} onRemove={handleRemove} />}
           {view === "fleet"         && <FleetScreen drivers={drivers} assignments={assignments} orders={orders} onAddDriver={handleAddDriver} onDeleteDriver={handleDeleteDriver} onToast={pushToast} />}
           {view === "notifications" && <NotificationsScreen log={window.SMS_LOG} onToast={pushToast} />}
