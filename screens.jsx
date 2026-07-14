@@ -90,7 +90,13 @@ function PODScreen({ orders, onToast }) {
   async function handleSave() {
     if (!order) return;
     const canvas = canvasRef.current;
-    const sig = await compressImage(canvas.toDataURL("image/png"), 620, 180, 0.85);
+    const flat = document.createElement("canvas");
+    flat.width = canvas.width; flat.height = canvas.height;
+    const ctx2 = flat.getContext("2d");
+    ctx2.fillStyle = "#fff";
+    ctx2.fillRect(0, 0, flat.width, flat.height);
+    ctx2.drawImage(canvas, 0, 0);
+    const sig = await compressImage(flat.toDataURL("image/jpeg"), 620, 180, 0.85);
     setSaving(true);
     try {
       await window.db.collection("pod").doc(order.id).set({
