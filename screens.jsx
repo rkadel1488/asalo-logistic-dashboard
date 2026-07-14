@@ -281,7 +281,8 @@ function PODScreen({ orders, onToast }) {
               {saving ? "Saving…" : <React.Fragment><Icon name="check" size={14} /> Submit POD &amp; Mark Delivered</React.Fragment>}
             </button>
           )}
-        </React.Fragment>}
+        </React.Fragment>
+      )}
       </React.Fragment>}
     </div>
   );
