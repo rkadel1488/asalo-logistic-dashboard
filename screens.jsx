@@ -171,8 +171,8 @@ function PODScreen({ orders, onToast }) {
         )}
         <div className="panel">
           <div className="panel-h"><span className="ttl">Customer signature</span></div>
-          <div className="panel-b" style={{ background: "#fff", borderRadius: 8 }}>
-            <img src={viewPod.signature} style={{ width: "100%", borderRadius: 6, background: "#fff", display: "block" }} />
+          <div style={{ padding: 14, background: "#fff", borderRadius: "0 0 10px 10px" }}>
+            <img src={viewPod.signature} style={{ width: "100%", borderRadius: 6, display: "block" }} />
           </div>
         </div>
       </div>
