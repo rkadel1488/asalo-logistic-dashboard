@@ -112,34 +112,72 @@ function PODScreen({ orders, onToast }) {
   }
 
   // POD detail modal
-  if (viewPod) return (
-    <div style={{ padding: 24, maxWidth: 700, margin: "0 auto", display: "flex", flexDirection: "column", gap: 20 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <button className="btn ghost sm" onClick={() => setViewPod(null)}><Icon name="arrow" size={13} style={{ transform: "rotate(180deg)" }} /> Back</button>
-        <div style={{ fontWeight: 700, fontSize: 16 }}>{viewPod.orderId} · {viewPod.customer}</div>
+  if (viewPod) {
+    function printPod() {
+      const w = window.open("", "_blank");
+      w.document.write(`<!DOCTYPE html><html><head><title>POD ${viewPod.orderId}</title>
+      <style>
+        body { font-family: Arial, sans-serif; max-width: 700px; margin: 40px auto; color: #111; }
+        h1 { font-size: 20px; margin-bottom: 4px; }
+        .sub { color: #666; font-size: 13px; margin-bottom: 24px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 24px; }
+        .lbl { font-size: 11px; text-transform: uppercase; color: #888; margin-bottom: 2px; }
+        .val { font-size: 14px; }
+        .section { font-size: 13px; font-weight: 700; margin: 20px 0 8px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+        img { width: 100%; border-radius: 6px; margin-bottom: 16px; }
+        .sig-box { background: #fff; border: 1px solid #ccc; border-radius: 6px; padding: 8px; }
+        @media print { body { margin: 20px; } }
+      </style></head><body>
+      <h1>Proof of Delivery — ${viewPod.orderId}</h1>
+      <div class="sub">ASA Logistics · ${viewPod.submittedAt ? new Date(viewPod.submittedAt.seconds * 1000).toLocaleString() : ""}</div>
+      <div class="grid">
+        <div><div class="lbl">Customer</div><div class="val">${viewPod.customer}</div></div>
+        <div><div class="lbl">Contact</div><div class="val">${viewPod.contactName || "—"}</div></div>
+        <div><div class="lbl">Destination</div><div class="val">${viewPod.destination || "—"}</div></div>
+        <div><div class="lbl">Order ref</div><div class="val">${viewPod.orderId}</div></div>
       </div>
-      <div className="panel">
-        <div className="panel-h"><span className="ttl">Delivery info</span></div>
-        <div className="panel-b" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontSize: 13 }}>
-          <div><div className="lbl-mini">Order</div><div className="mono">{viewPod.orderId}</div></div>
-          <div><div className="lbl-mini">Customer</div><div>{viewPod.customer}</div></div>
-          <div><div className="lbl-mini">Contact</div><div>{viewPod.contactName || "—"}</div></div>
-          <div><div className="lbl-mini">Destination</div><div>{viewPod.destination || "—"}</div></div>
-          {viewPod.submittedAt && <div style={{ gridColumn: "1/-1" }}><div className="lbl-mini">Submitted</div><div>{new Date(viewPod.submittedAt.seconds * 1000).toLocaleString()}</div></div>}
+      ${viewPod.photo ? `<div class="section">Photo evidence</div><img src="${viewPod.photo}" />` : ""}
+      <div class="section">Customer signature</div>
+      <div class="sig-box"><img src="${viewPod.signature}" /></div>
+      </body></html>`);
+      w.document.close();
+      w.focus();
+      setTimeout(() => w.print(), 400);
+    }
+
+    return (
+      <div style={{ padding: 24, maxWidth: 700, margin: "0 auto", display: "flex", flexDirection: "column", gap: 20 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <button className="btn ghost sm" onClick={() => setViewPod(null)}><Icon name="arrow" size={13} style={{ transform: "rotate(180deg)" }} /> Back</button>
+          <div style={{ fontWeight: 700, fontSize: 16 }}>{viewPod.orderId} · {viewPod.customer}</div>
+          <div style={{ flex: 1 }} />
+          <button className="btn" onClick={printPod}><Icon name="receipt" size={13} /> Print / Save PDF</button>
         </div>
-      </div>
-      {viewPod.photo && (
         <div className="panel">
-          <div className="panel-h"><span className="ttl">Photo evidence</span></div>
-          <div className="panel-b"><img src={viewPod.photo} style={{ width: "100%", borderRadius: 8, maxHeight: 400, objectFit: "cover" }} /></div>
+          <div className="panel-h"><span className="ttl">Delivery info</span></div>
+          <div className="panel-b" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontSize: 13 }}>
+            <div><div className="lbl-mini">Order</div><div className="mono">{viewPod.orderId}</div></div>
+            <div><div className="lbl-mini">Customer</div><div>{viewPod.customer}</div></div>
+            <div><div className="lbl-mini">Contact</div><div>{viewPod.contactName || "—"}</div></div>
+            <div><div className="lbl-mini">Destination</div><div>{viewPod.destination || "—"}</div></div>
+            {viewPod.submittedAt && <div style={{ gridColumn: "1/-1" }}><div className="lbl-mini">Submitted</div><div>{new Date(viewPod.submittedAt.seconds * 1000).toLocaleString()}</div></div>}
+          </div>
         </div>
-      )}
-      <div className="panel">
-        <div className="panel-h"><span className="ttl">Customer signature</span></div>
-        <div className="panel-b"><img src={viewPod.signature} style={{ width: "100%", borderRadius: 8, background: "#fff", padding: 8 }} /></div>
+        {viewPod.photo && (
+          <div className="panel">
+            <div className="panel-h"><span className="ttl">Photo evidence</span></div>
+            <div className="panel-b"><img src={viewPod.photo} style={{ width: "100%", borderRadius: 8, maxHeight: 400, objectFit: "cover" }} /></div>
+          </div>
+        )}
+        <div className="panel">
+          <div className="panel-h"><span className="ttl">Customer signature</span></div>
+          <div className="panel-b" style={{ background: "#fff", borderRadius: 8 }}>
+            <img src={viewPod.signature} style={{ width: "100%", borderRadius: 6, background: "#fff", display: "block" }} />
+          </div>
+        </div>
       </div>
-    </div>
-  );
+    );
+  }
 
   return (
     <div style={{ padding: 24, maxWidth: 700, margin: "0 auto", display: "flex", flexDirection: "column", gap: 20 }}>
