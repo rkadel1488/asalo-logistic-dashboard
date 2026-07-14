@@ -107,10 +107,10 @@ function Topbar({ crumbs, onSyncing, onMenu }) {
 }
 
 const TABS = [
+  { key: "pod", label: "POD", icon: "check" },
   { key: "orders", label: "Orders", icon: "inbox" },
   { key: "tracking", label: "Tracking", icon: "map" },
   { key: "fleet", label: "Fleet", icon: "truck" },
-  { key: "notifications", label: "Alerts", icon: "bell" },
 ];
 const TAB_KEYS = new Set(TABS.map((t) => t.key));
 
