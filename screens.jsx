@@ -2,14 +2,44 @@
 
 /* ============== PROOF OF DELIVERY ============== */
 
+function compressImage(dataUrl, maxW, maxH, quality) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      let w = img.width, h = img.height;
+      if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
+      if (h > maxH) { w = Math.round(w * maxH / h); h = maxH; }
+      const c = document.createElement("canvas");
+      c.width = w; c.height = h;
+      c.getContext("2d").drawImage(img, 0, 0, w, h);
+      resolve(c.toDataURL("image/jpeg", quality));
+    };
+    img.src = dataUrl;
+  });
+}
+
 function PODScreen({ orders, onToast }) {
+  const [tab, setTab] = React.useState("new"); // "new" | "history"
   const [selectedOrderId, setSelectedOrderId] = React.useState("");
   const [photo, setPhoto] = React.useState(null);
   const [saving, setSaving] = React.useState(false);
   const [saved, setSaved] = React.useState(false);
+  const [podHistory, setPodHistory] = React.useState([]);
+  const [historyLoading, setHistoryLoading] = React.useState(true);
+  const [viewPod, setViewPod] = React.useState(null);
   const canvasRef = React.useRef(null);
   const drawingRef = React.useRef(false);
   const fileRef = React.useRef(null);
+
+  React.useEffect(() => {
+    const unsub = window.db.collection("pod").onSnapshot(snap => {
+      const docs = snap.docs.map(d => ({ ...d.data(), id: d.id }));
+      docs.sort((a, b) => (b.submittedAt?.seconds || 0) - (a.submittedAt?.seconds || 0));
+      setPodHistory(docs);
+      setHistoryLoading(false);
+    }, () => setHistoryLoading(false));
+    return () => unsub();
+  }, []);
 
   const order = orders.find(o => o.id === selectedOrderId);
 
@@ -50,14 +80,17 @@ function PODScreen({ orders, onToast }) {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = ev => setPhoto(ev.target.result);
+    reader.onload = async ev => {
+      const compressed = await compressImage(ev.target.result, 1024, 1024, 0.7);
+      setPhoto(compressed);
+    };
     reader.readAsDataURL(file);
   }
 
   async function handleSave() {
     if (!order) return;
     const canvas = canvasRef.current;
-    const sig = canvas.toDataURL("image/png");
+    const sig = await compressImage(canvas.toDataURL("image/png"), 620, 180, 0.85);
     setSaving(true);
     try {
       await window.db.collection("pod").doc(order.id).set({
@@ -78,12 +111,90 @@ function PODScreen({ orders, onToast }) {
     setSaving(false);
   }
 
+  // POD detail modal
+  if (viewPod) return (
+    <div style={{ padding: 24, maxWidth: 700, margin: "0 auto", display: "flex", flexDirection: "column", gap: 20 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <button className="btn ghost sm" onClick={() => setViewPod(null)}><Icon name="arrow" size={13} style={{ transform: "rotate(180deg)" }} /> Back</button>
+        <div style={{ fontWeight: 700, fontSize: 16 }}>{viewPod.orderId} · {viewPod.customer}</div>
+      </div>
+      <div className="panel">
+        <div className="panel-h"><span className="ttl">Delivery info</span></div>
+        <div className="panel-b" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontSize: 13 }}>
+          <div><div className="lbl-mini">Order</div><div className="mono">{viewPod.orderId}</div></div>
+          <div><div className="lbl-mini">Customer</div><div>{viewPod.customer}</div></div>
+          <div><div className="lbl-mini">Contact</div><div>{viewPod.contactName || "—"}</div></div>
+          <div><div className="lbl-mini">Destination</div><div>{viewPod.destination || "—"}</div></div>
+          {viewPod.submittedAt && <div style={{ gridColumn: "1/-1" }}><div className="lbl-mini">Submitted</div><div>{new Date(viewPod.submittedAt.seconds * 1000).toLocaleString()}</div></div>}
+        </div>
+      </div>
+      {viewPod.photo && (
+        <div className="panel">
+          <div className="panel-h"><span className="ttl">Photo evidence</span></div>
+          <div className="panel-b"><img src={viewPod.photo} style={{ width: "100%", borderRadius: 8, maxHeight: 400, objectFit: "cover" }} /></div>
+        </div>
+      )}
+      <div className="panel">
+        <div className="panel-h"><span className="ttl">Customer signature</span></div>
+        <div className="panel-b"><img src={viewPod.signature} style={{ width: "100%", borderRadius: 8, background: "#fff", padding: 8 }} /></div>
+      </div>
+    </div>
+  );
+
   return (
     <div style={{ padding: 24, maxWidth: 700, margin: "0 auto", display: "flex", flexDirection: "column", gap: 20 }}>
       <div>
         <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>Proof of Delivery</div>
         <div className="muted" style={{ fontSize: 13 }}>Select an order, capture a photo, and collect a customer signature.</div>
       </div>
+
+      <div style={{ display: "flex", gap: 8, borderBottom: "1px solid var(--line)", paddingBottom: 2 }}>
+        {["new", "history"].map(t => (
+          <button key={t} className={`btn ghost sm ${tab === t ? "active" : ""}`}
+            style={{ borderBottom: tab === t ? "2px solid var(--accent)" : "2px solid transparent", borderRadius: 0, paddingBottom: 8 }}
+            onClick={() => setTab(t)}>
+            {t === "new" ? "New POD" : `POD History (${podHistory.length})`}
+          </button>
+        ))}
+      </div>
+
+      {tab === "history" && (
+        <div className="panel">
+          <div className="panel-h"><span className="ttl">Submitted PODs</span></div>
+          <div className="panel-b" style={{ padding: 0 }}>
+            {historyLoading ? (
+              <div className="muted" style={{ padding: 16, fontSize: 13 }}>Loading…</div>
+            ) : podHistory.length === 0 ? (
+              <div className="muted" style={{ padding: 16, fontSize: 13 }}>No PODs submitted yet.</div>
+            ) : (
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead>
+                  <tr style={{ borderBottom: "1px solid var(--line)" }}>
+                    {["Order", "Customer", "Destination", "Submitted", ""].map(h => (
+                      <th key={h} style={{ padding: "8px 14px", textAlign: "left", fontWeight: 500, color: "var(--fg-2)", fontSize: 11 }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {podHistory.map(p => (
+                    <tr key={p.id} style={{ borderBottom: "1px solid var(--line)" }}>
+                      <td style={{ padding: "10px 14px", fontWeight: 600 }} className="mono">{p.orderId}</td>
+                      <td style={{ padding: "10px 14px" }}>{p.customer}</td>
+                      <td style={{ padding: "10px 14px" }} className="muted">{p.destination || "—"}</td>
+                      <td style={{ padding: "10px 14px" }} className="muted">{p.submittedAt ? new Date(p.submittedAt.seconds * 1000).toLocaleDateString() : "—"}</td>
+                      <td style={{ padding: "10px 14px" }}>
+                        <button className="btn ghost sm" onClick={() => setViewPod(p)}>View</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
+
+      {tab === "new" && <React.Fragment>
 
       {/* Order selector */}
       <div className="panel">
@@ -170,8 +281,8 @@ function PODScreen({ orders, onToast }) {
               {saving ? "Saving…" : <React.Fragment><Icon name="check" size={14} /> Submit POD &amp; Mark Delivered</React.Fragment>}
             </button>
           )}
-        </React.Fragment>
-      )}
+        </React.Fragment>}
+      </React.Fragment>}
     </div>
   );
 }
