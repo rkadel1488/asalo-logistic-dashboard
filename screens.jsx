@@ -25,6 +25,7 @@ function PODScreen({ orders, onToast }) {
   const [tab, setTab] = React.useState("new"); // "new" | "history"
   const [selectedOrderId, setSelectedOrderId] = React.useState("");
   const [photo, setPhoto] = React.useState(null);
+  const [receiverName, setReceiverName] = React.useState("");
   const [saving, setSaving] = React.useState(false);
   const [saved, setSaved] = React.useState(false);
   const [podHistory, setPodHistory] = React.useState([]);
@@ -109,6 +110,7 @@ function PODScreen({ orders, onToast }) {
         destination: order.destination || "",
         photo: photo || null,
         signature: sig,
+        receiverName: receiverName.trim(),
         submittedAt: firebase.firestore.FieldValue.serverTimestamp(),
       });
       await window.db.collection("orders").doc(order.id).update({ status: "delivered", podSubmitted: true });
@@ -144,6 +146,7 @@ function PODScreen({ orders, onToast }) {
         <div><div class="lbl">Contact</div><div class="val">${viewPod.contactName || "—"}</div></div>
         <div><div class="lbl">Destination</div><div class="val">${viewPod.destination || "—"}</div></div>
         <div><div class="lbl">Order ref</div><div class="val">${viewPod.orderId}</div></div>
+        ${viewPod.receiverName ? `<div style="grid-column:1/-1"><div class="lbl">Received by</div><div class="val" style="font-weight:700">${viewPod.receiverName}</div></div>` : ""}
       </div>
       ${viewPod.photo ? `<div class="section">Photo evidence</div><img src="${viewPod.photo}" />` : ""}
       <div class="section">Customer signature</div>
@@ -169,6 +172,7 @@ function PODScreen({ orders, onToast }) {
             <div><div className="lbl-mini">Customer</div><div>{viewPod.customer}</div></div>
             <div><div className="lbl-mini">Contact</div><div>{viewPod.contactName || "—"}</div></div>
             <div><div className="lbl-mini">Destination</div><div>{viewPod.destination || "—"}</div></div>
+            {viewPod.receiverName && <div style={{ gridColumn: "1/-1" }}><div className="lbl-mini">Received by</div><div style={{ fontWeight: 600 }}>{viewPod.receiverName}</div></div>}
             {viewPod.submittedAt && <div style={{ gridColumn: "1/-1" }}><div className="lbl-mini">Submitted</div><div>{new Date(viewPod.submittedAt.seconds * 1000).toLocaleString()}</div></div>}
           </div>
         </div>
@@ -315,6 +319,19 @@ function PODScreen({ orders, onToast }) {
                 style={{ width: "100%", height: 180, borderRadius: 8, border: "1px solid var(--line)", background: "#fff", cursor: "crosshair", touchAction: "none" }}
                 onMouseDown={startDraw} onMouseMove={draw} onMouseUp={stopDraw} onMouseLeave={stopDraw}
                 onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={stopDraw}
+              />
+            </div>
+          </div>
+
+          <div className="panel">
+            <div className="panel-h"><span className="ttl">Receiving customer name</span></div>
+            <div className="panel-b">
+              <input
+                className="inp"
+                style={{ width: "100%" }}
+                placeholder="Full name of person receiving the delivery"
+                value={receiverName}
+                onChange={e => setReceiverName(e.target.value)}
               />
             </div>
           </div>
