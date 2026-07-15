@@ -1801,61 +1801,254 @@ function BarChart() {
 /* ============== BILLING ============== */
 // Invoices are stored in Firestore — no seed data
 
-function NewInvoiceModal({ open, onClose, onSave, customers }) {
+const ADDITIONAL_CHARGES = [
+  { label: "Same day delivery", amount: 15 },
+  { label: "Priority express", amount: 30 },
+  { label: "Timed delivery", amount: 15 },
+  { label: "Manual unload", amount: 15 },
+  { label: "Cellar door", amount: 15 },
+  { label: "Additional winery", amount: 10 },
+  { label: "Multi-winery", amount: 60 },
+];
+
+function parseAdditionalServices(order) {
+  if (!order) return [];
+  const items = [];
+  const svcStr = (order.additionalServices || "").toLowerCase();
+  const colStr = (order.collectionType || "").toLowerCase();
+  ADDITIONAL_CHARGES.forEach(ch => {
+    const key = ch.label.toLowerCase();
+    if (svcStr.includes(key) || colStr.includes(key)) {
+      items.push({ description: ch.label, qty: 1, unitPrice: ch.amount });
+    }
+  });
+  return items;
+}
+
+function NewInvoiceModal({ open, onClose, onSave, customers, orders }) {
   const today = new Date();
   const fmt = d => d.toLocaleDateString("en-AU", { day: "numeric", month: "short" });
   const due30 = new Date(today); due30.setDate(due30.getDate() + 30);
-  const blank = { customer: customers[0]?.name || "", amount: "", issued: fmt(today), due: fmt(due30), notes: "" };
-  const [form, setForm] = React.useState(blank);
-  React.useEffect(() => { if (open) setForm(blank); }, [open]);
+
+  const [customer, setCustomer] = React.useState(customers[0]?.name || "");
+  const [orderId, setOrderId] = React.useState("");
+  const [issued, setIssued] = React.useState(fmt(today));
+  const [due, setDue] = React.useState(fmt(due30));
+  const [notes, setNotes] = React.useState("");
+  const [lineItems, setLineItems] = React.useState([{ description: "Freight & logistics services", qty: 1, unitPrice: "" }]);
+  const [discountType, setDiscountType] = React.useState("flat");
+  const [discountVal, setDiscountVal] = React.useState("");
+
+  React.useEffect(() => {
+    if (open) {
+      setCustomer(customers[0]?.name || "");
+      setOrderId("");
+      setIssued(fmt(today));
+      setDue(fmt(due30));
+      setNotes("");
+      setLineItems([{ description: "Freight & logistics services", qty: 1, unitPrice: "" }]);
+      setDiscountType("flat");
+      setDiscountVal("");
+    }
+  }, [open]);
+
+  // When an order is selected, auto-populate line items from order data
+  React.useEffect(() => {
+    if (!orderId) return;
+    const o = (orders || []).find(x => x.id === orderId);
+    if (!o) return;
+    const extras = parseAdditionalServices(o);
+    // Parse the order value as the base freight charge
+    const baseAmt = o.value ? parseFloat(o.value.replace(/[^0-9.]/g, "")) || "" : "";
+    const baseItem = { description: `Freight & logistics services — ${o.id}`, qty: 1, unitPrice: baseAmt };
+    setLineItems([baseItem, ...extras]);
+  }, [orderId]);
+
   if (!open) return null;
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const subtotal = lineItems.reduce((s, l) => s + (parseFloat(l.qty) || 0) * (parseFloat(l.unitPrice) || 0), 0);
+  const discountAmt = discountVal
+    ? (discountType === "percent" ? subtotal * (parseFloat(discountVal) / 100) : parseFloat(discountVal))
+    : 0;
+  const afterDiscount = Math.max(0, subtotal - discountAmt);
+  const gst = afterDiscount * 0.1;
+  const total = afterDiscount + gst;
+
+  function setLine(i, key, val) {
+    setLineItems(prev => prev.map((l, idx) => idx === i ? { ...l, [key]: val } : l));
+  }
+  function addLine() {
+    setLineItems(prev => [...prev, { description: "", qty: 1, unitPrice: "" }]);
+  }
+  function removeLine(i) {
+    setLineItems(prev => prev.filter((_, idx) => idx !== i));
+  }
+  function addCharge(ch) {
+    if (lineItems.some(l => l.description === ch.label)) return;
+    setLineItems(prev => [...prev, { description: ch.label, qty: 1, unitPrice: ch.amount }]);
+  }
+
   function save() {
-    if (!form.customer || !form.amount) return;
-    onSave({ customer: form.customer, amount: parseFloat(form.amount.replace(/[^0-9.]/g, "")), issued: form.issued, due: form.due, notes: form.notes });
+    if (!customer) return;
+    const validLines = lineItems.filter(l => l.description && parseFloat(l.unitPrice) > 0);
+    if (!validLines.length) return;
+    onSave({ customer, orderId, issued, due, notes, lineItems: validLines, discountType, discountVal: parseFloat(discountVal) || 0, amount: parseFloat(total.toFixed(2)) });
     onClose();
   }
+
+  const selStyle = { background: "var(--bg-2)", border: "1px solid var(--line)", color: "var(--fg-0)", borderRadius: 4, padding: "6px 8px", fontSize: 12.5 };
+
   return (
     <div className="modal-bd" onClick={onClose}>
-      <div className="modal" style={{ width: 500 }} onClick={e => e.stopPropagation()}>
-        <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 10 }}>
+      <div className="modal" style={{ width: 680, maxHeight: "90vh", overflow: "auto" }} onClick={e => e.stopPropagation()}>
+        <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 10, position: "sticky", top: 0, background: "var(--bg-1)", zIndex: 2 }}>
           <Icon name="receipt" />
           <div style={{ fontWeight: 600 }}>New invoice</div>
           <div style={{ flex: 1 }} />
           <button className="btn ghost sm" onClick={onClose}><Icon name="x" size={14} /></button>
         </div>
-        <div style={{ padding: 18, display: "flex", flexDirection: "column", gap: 12 }}>
-          <div className="field">
-            <label>Customer <span style={{ color: "var(--st-delayed)" }}>*</span></label>
-            <select value={form.customer} onChange={e => set("customer", e.target.value)}
-              style={{ background: "var(--bg-2)", border: "1px solid var(--line)", color: "var(--fg-0)", borderRadius: 4, padding: "6px 8px", fontSize: 12.5 }}>
-              {customers.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
-            </select>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-            <div className="field">
-              <label>Amount ($) <span style={{ color: "var(--st-delayed)" }}>*</span></label>
-              <input placeholder="0.00" value={form.amount} onChange={e => set("amount", e.target.value)} className="mono" />
+        <div style={{ padding: 18, display: "flex", flexDirection: "column", gap: 14 }}>
+
+          {/* Step 1: Company */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10 }}>
+            <div className="field" style={{ gridColumn: "1/3" }}>
+              <label>1. Select company <span style={{ color: "var(--st-delayed)" }}>*</span></label>
+              <select value={customer} onChange={e => { setCustomer(e.target.value); setOrderId(""); }} style={selStyle}>
+                <option value="">— Choose company —</option>
+                {customers.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+              </select>
             </div>
             <div className="field">
               <label>Issued</label>
-              <input value={form.issued} onChange={e => set("issued", e.target.value)} />
+              <input value={issued} onChange={e => setIssued(e.target.value)} />
             </div>
             <div className="field">
               <label>Due date</label>
-              <input value={form.due} onChange={e => set("due", e.target.value)} />
+              <input value={due} onChange={e => setDue(e.target.value)} />
             </div>
           </div>
+
+          {/* Step 2: Order — filtered by company */}
           <div className="field">
-            <label>Notes</label>
-            <input placeholder="Optional — e.g. for orders ASL-24871, ASL-24870" value={form.notes} onChange={e => set("notes", e.target.value)} />
+            <label>2. Select order <span style={{ fontSize: 11, color: "var(--fg-3)", fontWeight: 400 }}>(auto-populates charges from order)</span></label>
+            <select value={orderId} onChange={e => setOrderId(e.target.value)} style={selStyle} disabled={!customer}>
+              <option value="">— {customer ? "Select order" : "Select a company first"} —</option>
+              {(orders || []).filter(o => !customer || o.customer === customer).map(o => (
+                <option key={o.id} value={o.id}>{o.id} · {o.destination} · {o.cargo} · {o.value || ""}</option>
+              ))}
+            </select>
           </div>
-          <div className="hint">Invoice will be created with status <strong>Open</strong> and added to outstanding balance.</div>
+
+          {/* Line items */}
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--fg-3)" }}>Line items</span>
+            </div>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid var(--line)" }}>
+                  <th style={{ textAlign: "left", padding: "4px 6px", fontWeight: 600, color: "var(--fg-3)", fontSize: 11 }}>Description</th>
+                  <th style={{ textAlign: "center", padding: "4px 6px", fontWeight: 600, color: "var(--fg-3)", fontSize: 11, width: 60 }}>Qty</th>
+                  <th style={{ textAlign: "right", padding: "4px 6px", fontWeight: 600, color: "var(--fg-3)", fontSize: 11, width: 100 }}>Unit price</th>
+                  <th style={{ textAlign: "right", padding: "4px 6px", fontWeight: 600, color: "var(--fg-3)", fontSize: 11, width: 90 }}>Total</th>
+                  <th style={{ width: 28 }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {lineItems.map((l, i) => (
+                  <tr key={i} style={{ borderBottom: "1px solid var(--line)" }}>
+                    <td style={{ padding: "4px 6px" }}>
+                      <input value={l.description} onChange={e => setLine(i, "description", e.target.value)}
+                        style={{ width: "100%", background: "transparent", border: "none", color: "var(--fg-0)", fontSize: 12.5, outline: "none" }}
+                        placeholder="Description" />
+                    </td>
+                    <td style={{ padding: "4px 6px" }}>
+                      <input type="number" value={l.qty} onChange={e => setLine(i, "qty", e.target.value)}
+                        style={{ width: "100%", background: "transparent", border: "none", color: "var(--fg-0)", fontSize: 12.5, outline: "none", textAlign: "center" }} />
+                    </td>
+                    <td style={{ padding: "4px 6px" }}>
+                      <input type="number" value={l.unitPrice} onChange={e => setLine(i, "unitPrice", e.target.value)}
+                        placeholder="0.00"
+                        style={{ width: "100%", background: "transparent", border: "none", color: "var(--fg-0)", fontSize: 12.5, outline: "none", textAlign: "right" }} />
+                    </td>
+                    <td style={{ padding: "4px 6px", textAlign: "right", fontWeight: 600, fontFamily: "monospace" }}>
+                      ${((parseFloat(l.qty) || 0) * (parseFloat(l.unitPrice) || 0)).toFixed(2)}
+                    </td>
+                    <td style={{ padding: "4px 2px" }}>
+                      <button onClick={() => removeLine(i)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--fg-3)", padding: "0 4px", fontSize: 14 }}>×</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <button className="btn sm" style={{ marginTop: 8 }} onClick={addLine}><Icon name="plus" size={11} /> Add line</button>
+          </div>
+
+          {/* Quick-add additional charges */}
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--fg-3)", marginBottom: 8 }}>Quick-add additional charges</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {ADDITIONAL_CHARGES.map(ch => {
+                const active = lineItems.some(l => l.description === ch.label);
+                return (
+                  <button key={ch.label} onClick={() => addCharge(ch)}
+                    className={`btn sm${active ? "" : ""}`}
+                    style={{ fontSize: 11, opacity: active ? 0.4 : 1, cursor: active ? "default" : "pointer" }}
+                    disabled={active}>
+                    {ch.label} (+${ch.amount})
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Discount */}
+          <div style={{ display: "grid", gridTemplateColumns: "130px 1fr", gap: 10, alignItems: "end" }}>
+            <div className="field">
+              <label>Discount type</label>
+              <select value={discountType} onChange={e => setDiscountType(e.target.value)} style={selStyle}>
+                <option value="flat">Flat amount ($)</option>
+                <option value="percent">Percentage (%)</option>
+              </select>
+            </div>
+            <div className="field">
+              <label>Discount value</label>
+              <input type="number" placeholder={discountType === "percent" ? "e.g. 10" : "e.g. 50"} value={discountVal}
+                onChange={e => setDiscountVal(e.target.value)} className="mono" />
+            </div>
+          </div>
+
+          {/* Totals summary */}
+          <div style={{ background: "var(--bg-2)", borderRadius: 8, border: "1px solid var(--line)", padding: "12px 16px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6 }}>
+              <span style={{ color: "var(--fg-2)" }}>Subtotal</span>
+              <span className="mono">${subtotal.toFixed(2)}</span>
+            </div>
+            {discountAmt > 0 && (
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6 }}>
+                <span style={{ color: "var(--fg-2)" }}>Discount{discountType === "percent" ? ` (${discountVal}%)` : ""}</span>
+                <span className="mono" style={{ color: "var(--st-delayed)" }}>−${discountAmt.toFixed(2)}</span>
+              </div>
+            )}
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 8 }}>
+              <span style={{ color: "var(--fg-2)" }}>GST (10%)</span>
+              <span className="mono">${gst.toFixed(2)}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 15, fontWeight: 700, borderTop: "1px solid var(--line)", paddingTop: 8 }}>
+              <span>Total (AUD)</span>
+              <span className="mono" style={{ color: "var(--accent)" }}>${total.toFixed(2)}</span>
+            </div>
+          </div>
+
+          <div className="field">
+            <label>Notes / reference</label>
+            <input placeholder="e.g. Order ASL-24871, purchase order ref" value={notes} onChange={e => setNotes(e.target.value)} />
+          </div>
         </div>
-        <div style={{ padding: 14, borderTop: "1px solid var(--line)", display: "flex", gap: 8, justifyContent: "flex-end" }}>
+        <div style={{ padding: 14, borderTop: "1px solid var(--line)", display: "flex", gap: 8, justifyContent: "flex-end", position: "sticky", bottom: 0, background: "var(--bg-1)" }}>
           <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn primary" onClick={save} disabled={!form.customer || !form.amount}>
-            <Icon name="plus" size={13} /> Create invoice
+          <button className="btn primary" onClick={save} disabled={!customer || !lineItems.some(l => l.description && parseFloat(l.unitPrice) > 0)}>
+            <Icon name="plus" size={13} /> Create invoice · ${total.toFixed(2)}
           </button>
         </div>
       </div>
@@ -1906,7 +2099,7 @@ function MarkPaidModal({ invoice, onClose, onSave }) {
   );
 }
 
-function BillingScreen({ customers, onToast }) {
+function BillingScreen({ customers, orders, onToast }) {
   const [invoices, setInvoices] = React.useState([]);
   const [invoicesLoading, setInvoicesLoading] = React.useState(true);
   const [showNew, setShowNew] = React.useState(false);
@@ -1944,11 +2137,12 @@ function BillingScreen({ customers, onToast }) {
   const counts = { all: invoices.length, open: 0, paid: 0, overdue: 0, bad_debt: 0 };
   invoices.forEach(i => { counts[i.status] = (counts[i.status] || 0) + 1; });
 
-  function addInvoice({ customer, amount, issued, due, notes }) {
+  function addInvoice({ customer, orderId, amount, issued, due, notes, lineItems, discountType, discountVal }) {
     const maxNum = invoices.reduce((m, i) => { const n = parseInt((i.id || "INV-1000").replace("INV-", "")); return n > m ? n : m; }, 1000);
     const invId = `INV-${maxNum + 1}`;
     window.db.collection("invoices").doc(invId).set({
-      customer, amount, issued, due, notes,
+      customer, orderId: orderId || null, amount, issued, due, notes: notes || "",
+      lineItems: lineItems || [], discountType: discountType || "flat", discountVal: discountVal || 0,
       status: "open", paidOn: null, paidMethod: null,
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
     });
@@ -2053,12 +2247,16 @@ function BillingScreen({ customers, onToast }) {
     <table>
       <thead><tr><th>Description</th><th>Quantity</th><th>Unit price ($)</th><th>Amount ($)</th></tr></thead>
       <tbody>
-        <tr><td>Freight &amp; logistics services — ${inv.customer}</td><td>1</td><td>$${inv.amount.toLocaleString()}.00</td><td>$${inv.amount.toLocaleString()}.00</td></tr>
-        ${inv.notes ? `<tr><td colspan="4" style="color:#888;font-size:12px;padding-top:4px">${inv.notes}</td></tr>` : ''}
-        <tr><td colspan="3" style="color:#888;font-size:12px">GST (10%)</td><td style="color:#888;font-size:12px">$${(inv.amount * 0.1).toFixed(2)}</td></tr>
+        ${(inv.lineItems && inv.lineItems.length ? inv.lineItems : [{ description: `Freight & logistics services — ${inv.customer}`, qty: 1, unitPrice: inv.amount }]).map(l => {
+          const lineTotal = ((parseFloat(l.qty) || 0) * (parseFloat(l.unitPrice) || 0)).toFixed(2);
+          return `<tr><td>${l.description}</td><td style="text-align:center">${l.qty}</td><td style="text-align:right">$${parseFloat(l.unitPrice).toFixed(2)}</td><td style="text-align:right">$${lineTotal}</td></tr>`;
+        }).join("")}
+        ${inv.notes ? `<tr><td colspan="4" style="color:#888;font-size:12px;padding-top:4px">Ref: ${inv.notes}</td></tr>` : ''}
+        ${(inv.discountVal || 0) > 0 ? `<tr><td colspan="3" style="color:#888;font-size:12px">Discount${inv.discountType === "percent" ? ` (${inv.discountVal}%)` : ""}</td><td style="color:#e55;font-size:12px;text-align:right">−$${(inv.discountType === "percent" ? (inv.amount / 1.1) * (inv.discountVal / 100) : inv.discountVal).toFixed(2)}</td></tr>` : ''}
+        <tr><td colspan="3" style="color:#888;font-size:12px">GST (10%)</td><td style="color:#888;font-size:12px;text-align:right">$${(inv.amount / 1.1 * 0.1).toFixed(2)}</td></tr>
       </tbody>
       <tfoot>
-        <tr class="total-row"><td colspan="3">Total incl. GST (AUD):</td><td>$${(inv.amount * 1.1).toFixed(2)}</td></tr>
+        <tr class="total-row"><td colspan="3">Total incl. GST (AUD):</td><td>$${parseFloat(inv.amount).toFixed(2)}</td></tr>
       </tfoot>
     </table>
     <div class="footer">
@@ -2223,7 +2421,7 @@ function BillingScreen({ customers, onToast }) {
         </table>
       </div>
 
-      <NewInvoiceModal open={showNew} onClose={() => setShowNew(false)} onSave={addInvoice} customers={customers} />
+      <NewInvoiceModal open={showNew} onClose={() => setShowNew(false)} onSave={addInvoice} customers={customers} orders={orders} />
       <MarkPaidModal invoice={markPaid} onClose={() => setMarkPaid(null)} onSave={confirmPaid} />
       {(() => {
         const inv = invoices.find(i => i.id === expandedId);

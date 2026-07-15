@@ -220,7 +220,7 @@ function App() {
           {view === "fleet"         && <FleetScreen drivers={drivers} assignments={assignments} orders={orders} onAddDriver={handleAddDriver} onDeleteDriver={handleDeleteDriver} onAssign={handleAssign} onToast={pushToast} />}
           {view === "notifications" && <NotificationsScreen log={window.SMS_LOG} onToast={pushToast} />}
           {view === "customers"     && <CustomersScreen customers={customers} onAddCustomer={c => { setCustomers(arr => [...arr, c]); pushToast({ ttl: "Customer added", sub: c.name }); }} onDeleteCustomer={handleDeleteCustomer} onToast={pushToast} />}
-          {view === "billing"       && <BillingScreen customers={customers} onToast={pushToast} />}
+          {view === "billing"       && <BillingScreen customers={customers} orders={orders} onToast={pushToast} />}
           {view === "analytics"     && <AnalyticsScreen />}
           {view === "api"           && <ApiScreen onToast={pushToast} />}
           {view === "settings"      && (
