@@ -404,15 +404,29 @@ const ORDER_PROGRESS = {
 };
 
 function TrackingScreen({ orders, drivers, assignments, onAssign, onRemove }) {
-  const inTransit = orders.filter((o) => ["in_transit", "loaded", "delayed"].includes(o.status));
-  const [activeId, setActiveId] = React.useState(inTransit[0]?.id || null);
+  // Show orders that are in transit/loaded/delayed OR have a driver assigned
+  const inTransit = orders.filter((o) =>
+    ["in_transit", "loaded", "delayed"].includes(o.status) || assignments[o.id]
+  );
+  const [activeId, setActiveId] = React.useState(null);
   const [showAssign, setShowAssign] = React.useState(null);
   const [detailId, setDetailId] = React.useState(null);
+  const [liveLocations, setLiveLocations] = React.useState({}); // driverId → {lat, lng, updatedAt}
 
   const mapRef = React.useRef(null);
   const mapInst = React.useRef(null);
   const layersRef = React.useRef({});
   const panToRef = React.useRef(null);
+
+  // Subscribe to live driver GPS from Firestore
+  React.useEffect(() => {
+    const unsub = window.db.collection("driverLocations").onSnapshot(snap => {
+      const locs = {};
+      snap.docs.forEach(d => { locs[d.id] = d.data(); });
+      setLiveLocations(locs);
+    });
+    return () => unsub();
+  }, []);
 
   const allDrivers = drivers || window.DRIVERS || [];
   const getDriver = (dId) => allDrivers.find(d => d.id === dId);
@@ -432,7 +446,7 @@ function TrackingScreen({ orders, drivers, assignments, onAssign, onRemove }) {
     return () => { map.remove(); mapInst.current = null; layersRef.current = {}; };
   }, []);
 
-  // Redraw markers & routes whenever assignments or activeId changes
+  // Redraw markers & routes whenever assignments, activeId, or live locations change
   React.useEffect(() => {
     const map = mapInst.current;
     if (!map) return;
@@ -447,7 +461,9 @@ function TrackingScreen({ orders, drivers, assignments, onAssign, onRemove }) {
       const driver = getDriver(driverId);
       const originLL = getCoords(o.origin);
       const destLL = getCoords(o.destination);
-      const truckLL = lerpCoords(o.origin, o.destination, progress);
+      // Use live GPS if available, otherwise interpolate
+      const liveLoc = driverId && liveLocations[driverId];
+      const truckLL = liveLoc ? [liveLoc.lat, liveLoc.lng] : lerpCoords(o.origin, o.destination, progress);
 
       const routeColor = isActive ? "#c4a827" : "#555";
       const routeOpacity = isActive ? 0.9 : 0.35;
@@ -489,9 +505,10 @@ function TrackingScreen({ orders, drivers, assignments, onAssign, onRemove }) {
           font-family:monospace;
         ">🚛 ${driver.truck} · ${o.id.slice(-3)}</div>`;
         const icon = L.divIcon({ className: "", html, iconSize: [null, null], iconAnchor: [40, 14] });
+        const liveTag = liveLoc ? ` · 📍 Live GPS` : ` · ${Math.round(progress * 100)}%`;
         layersRef.current[o.id + "-truck"] = L.marker(truckLL, { icon })
           .addTo(map)
-          .bindTooltip(`${driver.name} · ${Math.round(progress * 100)}% · ETA ${o.eta}`)
+          .bindTooltip(`${driver.name}${liveTag} · ETA ${o.eta}`)
           .on("click", () => setActiveId(o.id));
       } else {
         // Ghost marker for unassigned
@@ -506,7 +523,7 @@ function TrackingScreen({ orders, drivers, assignments, onAssign, onRemove }) {
           .on("click", () => { setActiveId(o.id); setShowAssign(o.id); });
       }
     });
-  }, [assignments, activeId, inTransit.length]);
+  }, [assignments, activeId, inTransit.length, liveLocations]);
 
   // Pan map to active shipment
   React.useEffect(() => {
@@ -587,7 +604,8 @@ function TrackingScreen({ orders, drivers, assignments, onAssign, onRemove }) {
                   {driver ? (
                     <div className="row" style={{ marginTop: 6, justifyContent: "space-between" }}>
                       <span style={{ fontSize: 10.5, color: "var(--fg-1)" }}>
-                        🚛 {driver.truck} · {driver.name} · {Math.round(progress * 100)}%
+                        🚛 {driver.truck} · {driver.name}
+                        {liveLocations[driver.id] ? <span style={{ color: "var(--st-delivered)", marginLeft: 4 }}>📍 Live</span> : ` · ${Math.round(progress * 100)}%`}
                       </span>
                       <button
                         className="btn ghost sm"

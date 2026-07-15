@@ -78,6 +78,12 @@ function App() {
     const d = drivers.find(x => x.id === driverId);
     const o = orders.find(x => x.id === orderId);
     pushToast({ ttl: "Vehicle assigned", sub: `${d?.truck || driverId} → ${orderId} · ${o?.customer || ""}` });
+    // Send tracking link to driver via SMS
+    if (d?.phone) {
+      const trackUrl = `https://logisticsasa.netlify.app/driver-track.html?orderId=${orderId}&driverId=${driverId}`;
+      const msg = encodeURIComponent(`ASALO Logistics: You've been assigned delivery ${orderId} to ${o?.destination || ""}. Open your tracking link to view details and share your location: ${trackUrl}`);
+      window.open(`sms:${d.phone.replace(/\s/g, "")}?body=${msg}`, "_self");
+    }
   }
   function handleRemove(orderId) {
     setAssignments(a => { const n = { ...a }; delete n[orderId]; return n; });
