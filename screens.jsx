@@ -1852,17 +1852,16 @@ function NewInvoiceModal({ open, onClose, onSave, customers, orders }) {
     }
   }, [open]);
 
-  // When an order is selected, auto-populate customer + additional charges
+  // When an order is selected, auto-populate line items from order data
   React.useEffect(() => {
     if (!orderId) return;
     const o = (orders || []).find(x => x.id === orderId);
     if (!o) return;
-    if (o.customer) setCustomer(o.customer);
     const extras = parseAdditionalServices(o);
-    setLineItems(prev => {
-      const base = prev.filter(l => !ADDITIONAL_CHARGES.some(c => c.label === l.description));
-      return [...base, ...extras];
-    });
+    // Parse the order value as the base freight charge
+    const baseAmt = o.value ? parseFloat(o.value.replace(/[^0-9.]/g, "")) || "" : "";
+    const baseItem = { description: `Freight & logistics services — ${o.id}`, qty: 1, unitPrice: baseAmt };
+    setLineItems([baseItem, ...extras]);
   }, [orderId]);
 
   if (!open) return null;
@@ -1910,11 +1909,12 @@ function NewInvoiceModal({ open, onClose, onSave, customers, orders }) {
         </div>
         <div style={{ padding: 18, display: "flex", flexDirection: "column", gap: 14 }}>
 
-          {/* Header fields */}
+          {/* Step 1: Company */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10 }}>
             <div className="field" style={{ gridColumn: "1/3" }}>
-              <label>Customer <span style={{ color: "var(--st-delayed)" }}>*</span></label>
-              <select value={customer} onChange={e => setCustomer(e.target.value)} style={selStyle}>
+              <label>1. Select company <span style={{ color: "var(--st-delayed)" }}>*</span></label>
+              <select value={customer} onChange={e => { setCustomer(e.target.value); setOrderId(""); }} style={selStyle}>
+                <option value="">— Choose company —</option>
                 {customers.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
               </select>
             </div>
@@ -1928,11 +1928,14 @@ function NewInvoiceModal({ open, onClose, onSave, customers, orders }) {
             </div>
           </div>
 
+          {/* Step 2: Order — filtered by company */}
           <div className="field">
-            <label>Link to order (optional — auto-populates charges)</label>
-            <select value={orderId} onChange={e => setOrderId(e.target.value)} style={selStyle}>
-              <option value="">— Select order —</option>
-              {(orders || []).map(o => <option key={o.id} value={o.id}>{o.id} · {o.customer} · {o.destination}</option>)}
+            <label>2. Select order <span style={{ fontSize: 11, color: "var(--fg-3)", fontWeight: 400 }}>(auto-populates charges from order)</span></label>
+            <select value={orderId} onChange={e => setOrderId(e.target.value)} style={selStyle} disabled={!customer}>
+              <option value="">— {customer ? "Select order" : "Select a company first"} —</option>
+              {(orders || []).filter(o => !customer || o.customer === customer).map(o => (
+                <option key={o.id} value={o.id}>{o.id} · {o.destination} · {o.cargo} · {o.value || ""}</option>
+              ))}
             </select>
           </div>
 
