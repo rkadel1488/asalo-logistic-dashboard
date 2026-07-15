@@ -811,12 +811,13 @@ function DriverMessageModal({ driver, onClose, onSend }) {
   );
 }
 
-function FleetScreen({ drivers, assignments, orders, onAddDriver, onDeleteDriver, onToast }) {
+function FleetScreen({ drivers, assignments, orders, onAddDriver, onDeleteDriver, onAssign, onToast }) {
   const [showAdd, setShowAdd] = React.useState(false);
   const [msgDriver, setMsgDriver] = React.useState(null);
   const [statusFilter, setStatusFilter] = React.useState("all");
   const [selectedDriver, setSelectedDriver] = React.useState(null);
   const [deleteTarget, setDeleteTarget] = React.useState(null);
+  const [assignDriver, setAssignDriver] = React.useState(null); // driver to assign
 
   const stMap = {
     on_route:  { lbl: "On route",  color: "var(--st-in_transit)" },
@@ -960,6 +961,14 @@ function FleetScreen({ drivers, assignments, orders, onAddDriver, onDeleteDriver
                         <Icon name="sms" size={12} />
                       </button>
                       <button
+                        className="btn sm"
+                        title={`Assign delivery to ${d.name}`}
+                        onClick={() => setAssignDriver(d)}
+                        style={{ fontSize: 11, padding: "3px 7px" }}
+                      >
+                        <Icon name="pkg" size={12} /> Assign
+                      </button>
+                      <button
                         className="btn ghost sm"
                         title={`Delete ${d.name}`}
                         onClick={() => setDeleteTarget(d)}
@@ -1033,6 +1042,66 @@ function FleetScreen({ drivers, assignments, orders, onAddDriver, onDeleteDriver
         onCancel={() => setDeleteTarget(null)}
         onConfirm={() => { onDeleteDriver && onDeleteDriver(deleteTarget.id); setDeleteTarget(null); }}
       />
+
+      {/* Assign Delivery Modal */}
+      {assignDriver && (
+        <AssignDeliveryModal
+          driver={assignDriver}
+          orders={orders}
+          assignments={assignments}
+          onClose={() => setAssignDriver(null)}
+          onAssign={(orderId) => {
+            onAssign && onAssign(orderId, assignDriver.id);
+            setAssignDriver(null);
+            onToast && onToast({ ttl: "Delivery assigned", sub: `${orderId} → ${assignDriver.name} · ${assignDriver.truck}` });
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function AssignDeliveryModal({ driver, orders, assignments, onClose, onAssign }) {
+  const [selectedOrderId, setSelectedOrderId] = React.useState("");
+  // Only show undelivered orders not already assigned to another driver
+  const assignedOrderIds = new Set(Object.keys(assignments || {}));
+  const available = (orders || []).filter(o =>
+    o.status !== "delivered" && (!assignedOrderIds.has(o.id) || assignments[o.id] === driver.id)
+  );
+  return (
+    <div className="modal-bd" onClick={onClose}>
+      <div className="modal" style={{ width: 420 }} onClick={e => e.stopPropagation()}>
+        <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 10 }}>
+          <Icon name="pkg" size={16} />
+          <div style={{ fontWeight: 600, flex: 1 }}>Assign delivery — {driver.name}</div>
+          <button className="btn ghost sm" onClick={onClose}><Icon name="x" size={14} /></button>
+        </div>
+        <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ fontSize: 13, color: "var(--fg-1)" }}>Select an order to assign to <b>{driver.name}</b> ({driver.truck})</div>
+          <select
+            className="inp"
+            value={selectedOrderId}
+            onChange={e => setSelectedOrderId(e.target.value)}
+            style={{ width: "100%" }}
+          >
+            <option value="">— Select order —</option>
+            {available.map(o => (
+              <option key={o.id} value={o.id}>
+                {o.id} · {o.customer} · {o.origin} → {o.destination} [{o.status}]
+              </option>
+            ))}
+          </select>
+          {available.length === 0 && (
+            <div className="muted" style={{ fontSize: 12 }}>No unassigned active orders available.</div>
+          )}
+        </div>
+        <div style={{ padding: "0 16px 16px", display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button className="btn ghost sm" onClick={onClose}>Cancel</button>
+          <button className="btn primary sm" disabled={!selectedOrderId} onClick={() => onAssign(selectedOrderId)}>
+            <Icon name="check" size={12} /> Assign
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
