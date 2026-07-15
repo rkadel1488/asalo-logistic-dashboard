@@ -13,7 +13,7 @@ function App() {
   const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
   const [orders, setOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
-  const [drivers, setDrivers] = useState(window.DRIVERS);
+  const [drivers, setDrivers] = useState([]);
   const [customers, setCustomers] = useState(window.CUSTOMERS);
   const [assignments, setAssignments] = useState({});
   const [view, setView] = useState("orders");
@@ -66,6 +66,31 @@ function App() {
     return () => unsub();
   }, []);
 
+  // Firestore real-time drivers subscription
+  useEffect(() => {
+    const unsub = window.db.collection("drivers").onSnapshot(snap => {
+      if (snap.empty) {
+        // Seed Firestore with mock drivers on first load
+        const batch = window.db.batch();
+        (window.DRIVERS || []).forEach(d => {
+          batch.set(window.db.collection("drivers").doc(d.id), d);
+        });
+        batch.commit();
+      } else {
+        setDrivers(snap.docs.map(d => ({ ...d.data(), id: d.id })));
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  // Firestore real-time assignments subscription
+  useEffect(() => {
+    const unsub = window.db.collection("assignments").doc("current").onSnapshot(doc => {
+      if (doc.exists) setAssignments(doc.data() || {});
+    });
+    return () => unsub();
+  }, []);
+
   function brightAttr(b) {
     if (!b) return null;
     const sign = b > 0 ? "up" : "down";
@@ -74,7 +99,9 @@ function App() {
   }
 
   function handleAssign(orderId, driverId) {
-    setAssignments(a => ({ ...a, [orderId]: driverId }));
+    const newAssignments = { ...assignments, [orderId]: driverId };
+    setAssignments(newAssignments);
+    window.db.collection("assignments").doc("current").set(newAssignments);
     const d = drivers.find(x => x.id === driverId);
     const o = orders.find(x => x.id === orderId);
     pushToast({ ttl: "Vehicle assigned", sub: `${d?.truck || driverId} → ${orderId} · ${o?.customer || ""}` });
@@ -86,10 +113,13 @@ function App() {
     }
   }
   function handleRemove(orderId) {
-    setAssignments(a => { const n = { ...a }; delete n[orderId]; return n; });
+    const newAssignments = { ...assignments };
+    delete newAssignments[orderId];
+    setAssignments(newAssignments);
+    window.db.collection("assignments").doc("current").set(newAssignments);
   }
   function handleAddDriver(d) {
-    setDrivers(arr => [...arr, d]);
+    window.db.collection("drivers").doc(d.id).set(d);
     pushToast({ ttl: "Driver added", sub: `${d.name} · ${d.truck}` });
   }
   function handleDeleteOrder(orderId) {
@@ -105,12 +135,11 @@ function App() {
   }
   function handleDeleteDriver(driverId) {
     const d = drivers.find(x => x.id === driverId);
-    setDrivers(arr => arr.filter(x => x.id !== driverId));
-    setAssignments(a => {
-      const n = { ...a };
-      Object.keys(n).forEach(k => { if (n[k] === driverId) delete n[k]; });
-      return n;
-    });
+    window.db.collection("drivers").doc(driverId).delete();
+    const newAssignments = { ...assignments };
+    Object.keys(newAssignments).forEach(k => { if (newAssignments[k] === driverId) delete newAssignments[k]; });
+    setAssignments(newAssignments);
+    window.db.collection("assignments").doc("current").set(newAssignments);
     pushToast({ ttl: "Driver removed", sub: d ? `${d.name} · ${d.truck}` : driverId });
   }
 
