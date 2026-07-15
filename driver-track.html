@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ASALO Driver Tracking</title>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0d0d14; color: #e8e8f0; min-height: 100vh; }
+    .header { background: #1a1a2e; border-bottom: 1px solid #2a2a40; padding: 16px 20px; display: flex; align-items: center; gap: 12px; }
+    .logo { background: #c4a827; color: #000; font-weight: 900; font-size: 16px; width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+    .header-title { font-weight: 700; font-size: 15px; }
+    .header-sub { font-size: 12px; color: #888; }
+    .card { background: #1a1a2e; border: 1px solid #2a2a40; border-radius: 12px; margin: 16px; padding: 18px; }
+    .card-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #888; margin-bottom: 12px; font-weight: 600; }
+    .row { display: flex; gap: 12px; margin-bottom: 10px; }
+    .lbl { font-size: 11px; color: #666; margin-bottom: 2px; }
+    .val { font-size: 14px; font-weight: 500; }
+    .val.mono { font-family: monospace; }
+    .status-pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+    .status-new { background: #1e2a3a; color: #60a5fa; }
+    .status-processing { background: #2a1e3a; color: #c084fc; }
+    .status-loaded { background: #1e3a2e; color: #34d399; }
+    .status-in_transit { background: #2a2a1e; color: #c4a827; }
+    .status-delivered { background: #1a2e1e; color: #4ade80; }
+    .btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 14px; border-radius: 10px; border: none; font-size: 15px; font-weight: 700; cursor: pointer; margin-top: 8px; }
+    .btn-primary { background: #c4a827; color: #000; }
+    .btn-danger { background: #ef4444; color: #fff; }
+    .btn-ghost { background: #2a2a40; color: #ddd; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .tracking-box { background: #0d1a0d; border: 1px solid #1a3a1a; border-radius: 10px; padding: 14px; margin-top: 12px; }
+    .tracking-status { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+    .pulse { width: 10px; height: 10px; border-radius: 50%; background: #4ade80; animation: pulse 1.5s infinite; flex-shrink: 0; }
+    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(0.8)} }
+    .coords { font-family: monospace; font-size: 12px; color: #4ade80; }
+    .error-box { background: #1a0d0d; border: 1px solid #3a1a1a; border-radius: 10px; padding: 14px; margin-top: 12px; color: #f87171; font-size: 13px; }
+    .divider { height: 1px; background: #2a2a40; margin: 4px 0 14px; }
+    .route-row { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 8px; }
+    .route-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; margin-top: 3px; }
+    .route-line { width: 2px; height: 20px; background: #2a2a40; margin: 3px 4px; }
+    .loading { text-align: center; padding: 60px 20px; color: #666; }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">A</div>
+  <div>
+    <div class="header-title">ASALO Logistics</div>
+    <div class="header-sub">Driver delivery tracking</div>
+  </div>
+</div>
+
+<div id="loading" class="loading">Loading delivery details…</div>
+<div id="content" style="display:none">
+
+  <div class="card">
+    <div class="card-title">Your delivery</div>
+    <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:14px">
+      <div class="val mono" id="orderId" style="font-size:18px;font-weight:800"></div>
+      <div id="statusPill" class="status-pill"></div>
+    </div>
+    <div class="divider"></div>
+    <div style="margin-bottom:12px">
+      <div class="route-row">
+        <div class="route-dot" style="background:#888"></div>
+        <div><div class="lbl">Pickup from</div><div class="val" id="origin"></div></div>
+      </div>
+      <div class="route-line" style="margin-left:4px"></div>
+      <div class="route-row">
+        <div class="route-dot" style="background:#c4a827"></div>
+        <div><div class="lbl">Deliver to</div><div class="val" id="destination"></div></div>
+      </div>
+    </div>
+    <div class="divider"></div>
+    <div class="row">
+      <div style="flex:1"><div class="lbl">Customer</div><div class="val" id="customer"></div></div>
+      <div style="flex:1"><div class="lbl">ETA</div><div class="val" id="eta"></div></div>
+    </div>
+    <div class="row">
+      <div style="flex:1"><div class="lbl">Cargo</div><div class="val" id="cargo"></div></div>
+      <div style="flex:1"><div class="lbl">Weight</div><div class="val" id="weight"></div></div>
+    </div>
+    <div id="noteRow" style="display:none"><div class="lbl" style="margin-top:4px">Note</div><div class="val" id="note" style="font-size:13px;color:#aaa"></div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Location sharing</div>
+    <p style="font-size:13px;color:#aaa;margin-bottom:14px">Share your GPS location so the operations team can track this delivery in real time. Keep this page open while delivering.</p>
+
+    <div id="trackingActive" class="tracking-box" style="display:none">
+      <div class="tracking-status">
+        <div class="pulse"></div>
+        <div style="font-weight:600;font-size:13px;color:#4ade80">Location sharing active</div>
+      </div>
+      <div class="coords" id="coords">Acquiring GPS…</div>
+      <div style="font-size:11px;color:#4a7a4a;margin-top:6px" id="lastUpdate">—</div>
+    </div>
+
+    <div id="trackingError" class="error-box" style="display:none"></div>
+
+    <button class="btn btn-primary" id="btnStart" onclick="startTracking()">📍 Start sharing location</button>
+    <button class="btn btn-danger" id="btnStop" style="display:none" onclick="stopTracking()">⏹ Stop sharing</button>
+    <button class="btn btn-ghost" onclick="window.location.href='tel:' + encodeURIComponent(dispatchPhone)" style="margin-top:12px">📞 Call dispatch</button>
+  </div>
+
+</div>
+
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyAC84_f3hlHq1Lhzg8YJvoJBvGj70wtafY",
+    authDomain: "asalo-logistics.firebaseapp.com",
+    projectId: "asalo-logistics",
+    storageBucket: "asalo-logistics.firebasestorage.app",
+    messagingSenderId: "983179082844",
+    appId: "1:983179082844:web:2446d1196dc0e48427ba99"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
+
+  const params = new URLSearchParams(window.location.search);
+  const orderId = params.get("orderId");
+  const driverId = params.get("driverId");
+  const dispatchPhone = "+61000000000"; // replace with real dispatch number
+
+  let watchId = null;
+  let order = null;
+
+  async function loadOrder() {
+    if (!orderId) { document.getElementById("loading").textContent = "No order ID in link."; return; }
+    try {
+      const doc = await db.collection("orders").doc(orderId).get();
+      if (!doc.exists) { document.getElementById("loading").textContent = "Order not found."; return; }
+      order = doc.data();
+      document.getElementById("orderId").textContent = order.id;
+      document.getElementById("customer").textContent = order.customer || "—";
+      document.getElementById("origin").textContent = order.origin || order.deliveryAddress || "—";
+      document.getElementById("destination").textContent = order.destination || "—";
+      document.getElementById("eta").textContent = order.eta || "—";
+      document.getElementById("cargo").textContent = order.cargo || "—";
+      document.getElementById("weight").textContent = order.weight || "—";
+      if (order.note) {
+        document.getElementById("note").textContent = order.note;
+        document.getElementById("noteRow").style.display = "";
+      }
+      const pill = document.getElementById("statusPill");
+      pill.textContent = (order.status || "").replace(/_/g, " ");
+      pill.className = "status-pill status-" + (order.status || "new");
+      document.getElementById("loading").style.display = "none";
+      document.getElementById("content").style.display = "";
+    } catch(e) {
+      document.getElementById("loading").textContent = "Error loading order: " + e.message;
+    }
+  }
+
+  function startTracking() {
+    if (!navigator.geolocation) {
+      showError("Your browser doesn't support GPS. Please use Chrome or Safari.");
+      return;
+    }
+    document.getElementById("btnStart").disabled = true;
+    watchId = navigator.geolocation.watchPosition(onPosition, onGpsError, {
+      enableHighAccuracy: true,
+      maximumAge: 15000,
+      timeout: 20000,
+    });
+    document.getElementById("trackingActive").style.display = "";
+    document.getElementById("btnStart").style.display = "none";
+    document.getElementById("btnStop").style.display = "";
+  }
+
+  function stopTracking() {
+    if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+    db.collection("driverLocations").doc(driverId).delete().catch(()=>{});
+    document.getElementById("trackingActive").style.display = "none";
+    document.getElementById("btnStart").style.display = "";
+    document.getElementById("btnStart").disabled = false;
+    document.getElementById("btnStop").style.display = "none";
+    document.getElementById("coords").textContent = "Acquiring GPS…";
+  }
+
+  function onPosition(pos) {
+    const { latitude, longitude, accuracy } = pos.coords;
+    document.getElementById("coords").textContent =
+      latitude.toFixed(5) + ", " + longitude.toFixed(5) + " (±" + Math.round(accuracy) + "m)";
+    document.getElementById("lastUpdate").textContent =
+      "Updated " + new Date().toLocaleTimeString();
+    document.getElementById("trackingError").style.display = "none";
+    if (driverId) {
+      db.collection("driverLocations").doc(driverId).set({
+        lat: latitude,
+        lng: longitude,
+        accuracy,
+        orderId: orderId || null,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+  }
+
+  function onGpsError(err) {
+    const msgs = {
+      1: "Location permission denied. Please allow location access in your browser settings.",
+      2: "GPS signal unavailable. Move to an open area and try again.",
+      3: "GPS request timed out. Trying again…",
+    };
+    showError(msgs[err.code] || "GPS error: " + err.message);
+  }
+
+  function showError(msg) {
+    const el = document.getElementById("trackingError");
+    el.textContent = msg;
+    el.style.display = "";
+  }
+
+  loadOrder();
+</script>
+</body>
+</html>
