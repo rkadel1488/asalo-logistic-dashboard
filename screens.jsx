@@ -2808,39 +2808,25 @@ function ToggleRow({ label, sub, defaultOn = false }) {
 function LoginScreen() {
   const [mode, setMode] = React.useState("phone");
   const [phone, setPhone] = React.useState("");
-  const [otp, setOtp] = React.useState("");
-  const [confirmResult, setConfirmResult] = React.useState(null);
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState(false);
-  const recaptchaContainerRef = React.useRef(null);
 
   const inputStyle = { background: "#1a1a28", border: "1px solid #333", borderRadius: 8, padding: "10px 14px", color: "#fff", fontSize: 14, outline: "none", width: "100%", boxSizing: "border-box" };
 
-  async function sendOtp(e) {
+  async function phoneLogin(e) {
     e.preventDefault();
     setError(""); setLoading(true);
     try {
-      if (!window._rcVerifier) {
-        window._rcVerifier = new firebase.auth.RecaptchaVerifier(recaptchaContainerRef.current, { size: "invisible" });
+      const norm = phone.replace(/\s+/g, "");
+      await window.auth.signInWithEmailAndPassword(`${norm}@asalo.app`, norm);
+    } catch (err) {
+      if (["auth/user-not-found", "auth/invalid-credential", "auth/wrong-password"].includes(err.code)) {
+        setError("Phone number not registered. Contact your administrator.");
+      } else {
+        setError(err.message);
       }
-      const result = await window.auth.signInWithPhoneNumber(phone.trim(), window._rcVerifier);
-      setConfirmResult(result);
-    } catch (err) {
-      window._rcVerifier = null;
-      setError(err.message || "Failed to send OTP. Check the number and try again.");
-    }
-    setLoading(false);
-  }
-
-  async function verifyOtp(e) {
-    e.preventDefault();
-    setError(""); setLoading(true);
-    try {
-      await confirmResult.confirm(otp.trim());
-    } catch (err) {
-      setError("Invalid code. Please try again.");
     }
     setLoading(false);
   }
@@ -2873,7 +2859,7 @@ function LoginScreen() {
 
       <div style={{ display: "flex", background: "#1a1a28", borderRadius: 8, padding: 3, width: "100%", maxWidth: 340 }}>
         {["phone", "admin"].map(m => (
-          <button key={m} onClick={() => { setMode(m); setError(""); setConfirmResult(null); }}
+          <button key={m} onClick={() => { setMode(m); setError(""); }}
             style={{ flex: 1, padding: "7px 0", border: "none", borderRadius: 6, fontWeight: 600, fontSize: 13, cursor: "pointer", background: mode === m ? "#c4a827" : "transparent", color: mode === m ? "#000" : "#666", transition: "all 120ms" }}>
             {m === "phone" ? "Staff Login" : "Admin"}
           </button>
@@ -2881,33 +2867,14 @@ function LoginScreen() {
       </div>
 
       {mode === "phone" ? (
-        <div style={{ width: "100%", maxWidth: 340, display: "flex", flexDirection: "column", gap: 12 }}>
-          {!confirmResult ? (
-            <form onSubmit={sendOtp} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              <input type="tel" placeholder="+61 4xx xxx xxx" value={phone} onChange={e => setPhone(e.target.value)} required style={inputStyle} />
-              {error && <div style={{ color: "#f87171", fontSize: 12.5, padding: "6px 10px", background: "rgba(248,113,113,0.1)", borderRadius: 6 }}>{error}</div>}
-              <div ref={recaptchaContainerRef} />
-              <button type="submit" disabled={loading}
-                style={{ background: "#c4a827", color: "#000", border: "none", borderRadius: 8, padding: "11px 0", fontWeight: 700, fontSize: 14, cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.7 : 1 }}>
-                {loading ? "Sending…" : "Send OTP"}
-              </button>
-            </form>
-          ) : (
-            <form onSubmit={verifyOtp} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              <div style={{ color: "#aaa", fontSize: 13, textAlign: "center" }}>Code sent to {phone}</div>
-              <input type="text" placeholder="Enter 6-digit code" value={otp} onChange={e => setOtp(e.target.value)} required maxLength={6} style={{ ...inputStyle, letterSpacing: 6, textAlign: "center", fontSize: 20 }} />
-              {error && <div style={{ color: "#f87171", fontSize: 12.5, padding: "6px 10px", background: "rgba(248,113,113,0.1)", borderRadius: 6 }}>{error}</div>}
-              <button type="submit" disabled={loading}
-                style={{ background: "#c4a827", color: "#000", border: "none", borderRadius: 8, padding: "11px 0", fontWeight: 700, fontSize: 14, cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.7 : 1 }}>
-                {loading ? "Verifying…" : "Verify & Sign In"}
-              </button>
-              <button type="button" onClick={() => { setConfirmResult(null); setOtp(""); setError(""); window._rcVerifier = null; }}
-                style={{ background: "none", border: "none", color: "#666", fontSize: 13, cursor: "pointer", textDecoration: "underline" }}>
-                Change number
-              </button>
-            </form>
-          )}
-        </div>
+        <form onSubmit={phoneLogin} style={{ display: "flex", flexDirection: "column", gap: 12, width: "100%", maxWidth: 340 }}>
+          <input type="tel" placeholder="Your phone number" value={phone} onChange={e => setPhone(e.target.value)} required style={inputStyle} />
+          {error && <div style={{ color: "#f87171", fontSize: 12.5, padding: "6px 10px", background: "rgba(248,113,113,0.1)", borderRadius: 6 }}>{error}</div>}
+          <button type="submit" disabled={loading}
+            style={{ background: "#c4a827", color: "#000", border: "none", borderRadius: 8, padding: "11px 0", fontWeight: 700, fontSize: 14, cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.7 : 1 }}>
+            {loading ? "Signing in…" : "Sign in"}
+          </button>
+        </form>
       ) : (
         <form onSubmit={adminLogin} style={{ display: "flex", flexDirection: "column", gap: 12, width: "100%", maxWidth: 340 }}>
           <input type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)} required style={inputStyle} />
@@ -2935,18 +2902,23 @@ function AddUserModal({ onClose, onSave }) {
     if (!phone.trim()) return;
     setLoading(true); setError("");
     try {
-      const existing = await window.db.collection("users").where("phone", "==", phone.trim()).get();
-      if (!existing.empty) { setError("This phone number is already registered."); setLoading(false); return; }
-      await window.db.collection("users").add({
-        name: name.trim() || phone.trim(),
-        phone: phone.trim(),
+      const norm = phone.replace(/\s+/g, "");
+      const secondary = firebase.initializeApp(window.FIREBASE_CONFIG, "tmp_" + Date.now());
+      const cred = await secondary.auth().createUserWithEmailAndPassword(`${norm}@asalo.app`, norm);
+      const uid = cred.user.uid;
+      await secondary.auth().signOut();
+      secondary.delete();
+      await window.db.collection("users").doc(uid).set({
+        name: name.trim() || norm,
+        phone: norm,
         role,
         disabled: false,
         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       });
       onSave();
     } catch (err) {
-      setError(err.message);
+      const msgs = { "auth/email-already-in-use": "This phone number is already registered." };
+      setError(msgs[err.code] || err.message);
       setLoading(false);
     }
   }
