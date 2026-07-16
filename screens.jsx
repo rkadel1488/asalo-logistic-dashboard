@@ -809,7 +809,7 @@ function DriverMessageModal({ driver, onClose, onSend }) {
             <label>Message · {text.length} chars</label>
             <textarea rows={4} placeholder={`Hi ${driver.name.split(" ")[0]}, …`} value={text} onChange={e => setText(e.target.value)} />
           </div>
-          <div className="hint">Sent via TransVirtual SMS gateway · sender ID <span className="mono">ASALO</span></div>
+          <div className="hint">Sent via SMS gateway · sender ID <span className="mono">ASALO</span></div>
         </div>
         <div style={{ padding: 14, borderTop: "1px solid var(--line)", display: "flex", gap: 8, justifyContent: "flex-end" }}>
           <button className="btn" onClick={onClose}>Cancel</button>
@@ -1204,7 +1204,7 @@ function TemplateModal({ template, onClose, onSave }) {
           </div>
 
           <div className="hint">
-            Sent via TransVirtual SMS gateway · sender ID <span className="mono">ASALO</span> · est. cost <span className="mono">$0.04</span> / segment
+            Sent via SMS gateway · sender ID <span className="mono">ASALO</span> · est. cost <span className="mono">$0.04</span> / segment
           </div>
         </div>
 
@@ -1254,7 +1254,7 @@ function NotificationsScreen({ log, onToast }) {
       {/* KPIs */}
       <div className="kpis">
         <div className="kpi"><div className="lbl">SMS sent · 24h</div><div className="val">418</div><Sparkline data={[20,30,28,40,44,38,42,50,48,52,56,62]} /></div>
-        <div className="kpi"><div className="lbl">Delivery rate</div><div className="val">99.2%</div><div className="delta up">▲ TransVirtual gateway</div></div>
+        <div className="kpi"><div className="lbl">Delivery rate</div><div className="val">99.2%</div><div className="delta up">▲ SMS gateway</div></div>
         <div className="kpi"><div className="lbl">Failed</div><div className="val">{counts.failed}</div><div className="delta down">Auto-retry in 4 min</div></div>
         <div className="kpi"><div className="lbl">Cost · 24h</div><div className="val">$16.72</div><div className="delta">$0.04 / msg avg</div></div>
       </div>
@@ -1616,18 +1616,6 @@ function ApiCredentialCard({ title, subtitle, defaultEndpoint, keyPlaceholder, f
 function ApiScreen({ onToast }) {
   return (
     <div className="responsive-grid" style={{ padding: 18, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-      <ApiCredentialCard
-        title="TransVirtual"
-        subtitle="Logistics ops, dispatch, tracking"
-        defaultEndpoint="https://app.transvirtual.com/api/v1"
-        keyPlaceholder="tv_live_… (paste when ready)"
-        onToast={onToast}
-        fields={[
-          { name: "account", label: "Account ID", placeholder: "e.g. asalo-au", mono: true },
-          { name: "webhook", label: "Webhook URL", placeholder: "https://asalo.co/api/hooks/tv", mono: true, default: "https://asalo.co/api/hooks/tv" },
-        ]}
-      />
-
       <ApiCredentialCard
         title="SMS gateway"
         subtitle="Customer notifications · choose any provider"

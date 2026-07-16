@@ -894,7 +894,7 @@ function SMSComposer({ open, onClose, onSend, order, trigger, presetTemplate }) 
           </div>
 
           <div className="hint">
-            Sent via TransVirtual SMS gateway · sender ID <span className="mono">ASALO</span> · est. cost <span className="mono">$0.04</span>
+            Sent via SMS gateway · sender ID <span className="mono">ASALO</span> · est. cost <span className="mono">$0.04</span>
           </div>
         </div>
 
