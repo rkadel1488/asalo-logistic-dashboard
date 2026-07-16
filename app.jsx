@@ -46,10 +46,10 @@ function AppRoot() {
     </div>
   );
   if (authState === "out") return <LoginScreen />;
-  return <App currentUser={currentUser} userRole={userRole} />;
+  return <Dashboard currentUser={currentUser} userRole={userRole} />;
 }
 
-function App({ currentUser, userRole }) {
+function Dashboard({ currentUser, userRole }) {
   const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
   const [orders, setOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
