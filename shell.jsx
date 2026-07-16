@@ -1,6 +1,6 @@
 // Sidebar + topbar shell
 
-const NAV = [
+const NAV_ALL = [
   { section: "Operations" },
   { key: "pod", label: "POD", icon: "check" },
   { key: "orders", label: "Orders", icon: "inbox" },
@@ -10,12 +10,18 @@ const NAV = [
   { section: "Customers" },
   { key: "customers", label: "Customers", icon: "contact" },
   { key: "billing", label: "Billing", icon: "receipt" },
-  { section: "System" },
-  { key: "api", label: "API & Integrations", icon: "link" },
-  { key: "settings", label: "Settings", icon: "cog" },
+  { section: "System", adminOnly: true },
+  { key: "users", label: "User Management", icon: "contact", adminOnly: true },
+  { key: "api", label: "API & Integrations", icon: "link", adminOnly: true },
+  { key: "settings", label: "Settings", icon: "cog", adminOnly: true },
 ];
 
-function Sidebar({ active, onNav, open, onClose, orderCount }) {
+function Sidebar({ active, onNav, open, onClose, orderCount, userRole, currentUser }) {
+  const isAdmin = userRole === "admin";
+  const nav = NAV_ALL.filter(n => !n.adminOnly || isAdmin);
+  const initials = currentUser?.email ? currentUser.email.substring(0, 2).toUpperCase() : "??";
+  const displayName = currentUser?.displayName || currentUser?.email?.split("@")[0] || "User";
+
   return (
     <React.Fragment>
       {open && <div className="sb-backdrop" onClick={onClose} />}
@@ -28,7 +34,7 @@ function Sidebar({ active, onNav, open, onClose, orderCount }) {
           </div>
         </div>
 
-        {NAV.map((n, i) =>
+        {nav.map((n, i) =>
           n.section ? (
             <div key={`s${i}`} className="sb-section">{n.section}</div>
           ) : (
@@ -47,12 +53,15 @@ function Sidebar({ active, onNav, open, onClose, orderCount }) {
 
         <div className="sb-footer">
           <div className="sb-user">
-            <div className="sb-avatar">RM</div>
+            <div className="sb-avatar">{initials}</div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div className="sb-uname">Renato M.</div>
-              <div className="sb-urole">Ops Manager · Melbourne</div>
+              <div className="sb-uname">{displayName}</div>
+              <div className="sb-urole">{isAdmin ? "Administrator" : "User"}</div>
             </div>
-            <Icon name="cog" size={14} />
+            <button title="Sign out" onClick={() => window.auth.signOut()}
+              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--fg-3)", padding: 4, display: "flex", alignItems: "center" }}>
+              <Icon name="x" size={14} />
+            </button>
           </div>
         </div>
       </aside>
@@ -60,8 +69,9 @@ function Sidebar({ active, onNav, open, onClose, orderCount }) {
   );
 }
 
-function Topbar({ crumbs, onSyncing, onMenu }) {
+function Topbar({ crumbs, onSyncing, onMenu, currentUser, userRole }) {
   const [q, setQ] = React.useState("");
+  const initials = currentUser?.email ? currentUser.email.substring(0, 2).toUpperCase() : "??";
   return (
     <header className="topbar">
       <button className="btn ghost sm menu-btn" onClick={onMenu} aria-label="Open menu">
@@ -99,7 +109,7 @@ function Topbar({ crumbs, onSyncing, onMenu }) {
       <button className="btn sm tb-bell">
         <Icon name="bell" size={13} />
       </button>
-      <div className="sb-avatar" style={{ width: 28, height: 28, fontSize: 11 }}>RM</div>
+      <div title={`${currentUser?.email} · ${userRole}`} className="sb-avatar" style={{ width: 28, height: 28, fontSize: 11, cursor: "default" }}>{initials}</div>
     </header>
   );
 }

@@ -9,7 +9,42 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "themeBrightness": 0
 }/*EDITMODE-END*/;
 
-function App() {
+const ADMIN_EMAIL = "rkadel1488@gmail.com";
+
+function AppRoot() {
+  const [authState, setAuthState] = useState("loading");
+  const [currentUser, setCurrentUser] = useState(null);
+  const [userRole, setUserRole] = useState(null);
+
+  useEffect(() => {
+    const unsub = window.auth.onAuthStateChanged(async user => {
+      if (!user) { setAuthState("out"); setCurrentUser(null); setUserRole(null); return; }
+      setCurrentUser(user);
+      if (user.email === ADMIN_EMAIL) {
+        setUserRole("admin");
+        window.db.collection("users").doc(user.uid).set({ email: user.email, role: "admin", name: "Admin" }, { merge: true });
+      } else {
+        const doc = await window.db.collection("users").doc(user.uid).get();
+        const data = doc.exists ? doc.data() : {};
+        if (data.disabled) { window.auth.signOut(); return; }
+        setUserRole(data.role || "user");
+      }
+      setAuthState("in");
+    });
+    return () => unsub();
+  }, []);
+
+  if (authState === "loading") return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "#0d0d14", flexDirection: "column", gap: 12 }}>
+      <div style={{ width: 36, height: 36, borderRadius: 8, background: "#c4a827", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: 18, color: "#000" }}>A</div>
+      <div style={{ color: "#666", fontSize: 13 }}>Loading…</div>
+    </div>
+  );
+  if (authState === "out") return <LoginScreen />;
+  return <App currentUser={currentUser} userRole={userRole} />;
+}
+
+function App({ currentUser, userRole }) {
   const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
   const [orders, setOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
@@ -166,6 +201,8 @@ function App() {
     });
   }
 
+  const isAdmin = userRole === "admin";
+
   const crumbsByView = {
     pod:           ["Operations", "POD"],
     orders:        ["Operations", "Orders"],
@@ -174,6 +211,7 @@ function App() {
     notifications: ["Operations", "SMS & Notifications"],
     customers:     ["Customers"],
     billing:       ["Customers", "Billing"],
+    users:         ["System", "User Management"],
     api:           ["System", "API & Integrations"],
     settings:      ["System", "Settings"],
   };
@@ -186,12 +224,16 @@ function App() {
         open={mobileNavOpen}
         onClose={() => setMobileNavOpen(false)}
         orderCount={orders.length}
+        userRole={userRole}
+        currentUser={currentUser}
       />
       <div className="main" style={{ position: "relative" }}>
         <Topbar
           crumbs={crumbsByView[view] || ["Dashboard"]}
           onSyncing={() => pushToast({ ttl: "Sync complete", sub: "1,284 events · 0 errors" })}
           onMenu={() => setMobileNavOpen(true)}
+          currentUser={currentUser}
+          userRole={userRole}
         />
         <div className="viewport">
           {ordersLoading && view === "orders" && (
@@ -220,14 +262,15 @@ function App() {
           {view === "notifications" && <NotificationsScreen log={window.SMS_LOG} onToast={pushToast} />}
           {view === "customers"     && <CustomersScreen customers={customers} orders={orders} onAddCustomer={c => { setCustomers(arr => [...arr, c]); pushToast({ ttl: "Customer added", sub: c.name }); }} onDeleteCustomer={handleDeleteCustomer} onToast={pushToast} />}
           {view === "billing"       && <BillingScreen customers={customers} orders={orders} onToast={pushToast} />}
-          {view === "api"           && <ApiScreen onToast={pushToast} />}
-          {view === "settings"      && (
+          {view === "api"           && isAdmin && <ApiScreen onToast={pushToast} />}
+          {view === "settings"      && isAdmin && (
             <SettingsScreen
               theme={{ mode: tweaks.themeMode, brightness: tweaks.themeBrightness }}
               onThemeChange={(t) => { setTweak("themeMode", t.mode); setTweak("themeBrightness", t.brightness); }}
               onToast={pushToast}
             />
           )}
+          {view === "users"         && isAdmin && <UsersScreen currentUser={currentUser} onToast={pushToast} />}
         </div>
 
         <BottomNav
@@ -288,4 +331,4 @@ function App() {
   );
 }
 
-Object.assign(window, { App });
+Object.assign(window, { App: AppRoot });

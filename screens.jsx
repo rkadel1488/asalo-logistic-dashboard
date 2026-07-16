@@ -2805,8 +2805,220 @@ function ToggleRow({ label, sub, defaultOn = false }) {
   );
 }
 
+function LoginScreen() {
+  const [email, setEmail] = React.useState("");
+  const [password, setPassword] = React.useState("");
+  const [error, setError] = React.useState("");
+  const [loading, setLoading] = React.useState(false);
+
+  async function handleLogin(e) {
+    e.preventDefault();
+    setError(""); setLoading(true);
+    try {
+      await window.auth.signInWithEmailAndPassword(email.trim(), password);
+    } catch (err) {
+      const msgs = {
+        "auth/user-not-found": "No account found with this email.",
+        "auth/wrong-password": "Incorrect password.",
+        "auth/invalid-email": "Invalid email address.",
+        "auth/too-many-requests": "Too many attempts. Try again later.",
+        "auth/invalid-credential": "Incorrect email or password.",
+      };
+      setError(msgs[err.code] || err.message);
+    }
+    setLoading(false);
+  }
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "#0d0d14", flexDirection: "column", gap: 24, padding: 24 }}>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, marginBottom: 8 }}>
+        <div style={{ width: 44, height: 44, borderRadius: 10, background: "#c4a827", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: 22, color: "#000" }}>A</div>
+        <div style={{ color: "#fff", fontWeight: 700, fontSize: 18, letterSpacing: 0.5 }}>ASALO Logistic OS</div>
+        <div style={{ color: "#666", fontSize: 13 }}>Sign in to continue</div>
+      </div>
+      <form onSubmit={handleLogin} style={{ display: "flex", flexDirection: "column", gap: 12, width: "100%", maxWidth: 340 }}>
+        <input
+          type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)} required
+          style={{ background: "#1a1a28", border: "1px solid #333", borderRadius: 8, padding: "10px 14px", color: "#fff", fontSize: 14, outline: "none" }}
+        />
+        <input
+          type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} required
+          style={{ background: "#1a1a28", border: "1px solid #333", borderRadius: 8, padding: "10px 14px", color: "#fff", fontSize: 14, outline: "none" }}
+        />
+        {error && <div style={{ color: "#f87171", fontSize: 12.5, padding: "6px 10px", background: "rgba(248,113,113,0.1)", borderRadius: 6 }}>{error}</div>}
+        <button type="submit" disabled={loading}
+          style={{ background: "#c4a827", color: "#000", border: "none", borderRadius: 8, padding: "11px 0", fontWeight: 700, fontSize: 14, cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.7 : 1 }}>
+          {loading ? "Signing in…" : "Sign in"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function AddUserModal({ onClose, onSave }) {
+  const [name, setName] = React.useState("");
+  const [email, setEmail] = React.useState("");
+  const [password, setPassword] = React.useState("");
+  const [role, setRole] = React.useState("user");
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState("");
+
+  async function handleSave(e) {
+    e.preventDefault();
+    if (!email.trim() || !password) return;
+    setLoading(true); setError("");
+    try {
+      const secondary = firebase.initializeApp(window.FIREBASE_CONFIG, "tmp_" + Date.now());
+      const cred = await secondary.auth().createUserWithEmailAndPassword(email.trim(), password);
+      const uid = cred.user.uid;
+      await secondary.auth().signOut();
+      secondary.delete();
+      await window.db.collection("users").doc(uid).set({
+        email: email.trim(),
+        name: name.trim() || email.split("@")[0],
+        role,
+        disabled: false,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+      onSave();
+    } catch (err) {
+      const msgs = {
+        "auth/email-already-in-use": "This email is already registered.",
+        "auth/invalid-email": "Invalid email address.",
+        "auth/weak-password": "Password must be at least 6 characters.",
+      };
+      setError(msgs[err.code] || err.message);
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <div className="modal" style={{ maxWidth: 420 }}>
+        <div className="modal-header">
+          <div className="modal-title">Add User</div>
+          <button className="btn ghost sm" onClick={onClose}><Icon name="x" size={16} /></button>
+        </div>
+        <form onSubmit={handleSave}>
+          <div className="modal-body" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div className="field">
+              <label className="label">Name</label>
+              <input className="input" placeholder="Full name" value={name} onChange={e => setName(e.target.value)} />
+            </div>
+            <div className="field">
+              <label className="label">Email *</label>
+              <input className="input" type="email" placeholder="user@example.com" value={email} onChange={e => setEmail(e.target.value)} required />
+            </div>
+            <div className="field">
+              <label className="label">Password *</label>
+              <input className="input" type="password" placeholder="Min 6 characters" value={password} onChange={e => setPassword(e.target.value)} required minLength={6} />
+            </div>
+            <div className="field">
+              <label className="label">Role</label>
+              <select className="input" value={role} onChange={e => setRole(e.target.value)}>
+                <option value="user">User</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
+            {error && <div style={{ color: "var(--red)", fontSize: 12.5 }}>{error}</div>}
+          </div>
+          <div className="modal-footer">
+            <button type="button" className="btn ghost" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn primary" disabled={loading}>{loading ? "Creating…" : "Create User"}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function UsersScreen({ currentUser, onToast }) {
+  const [users, setUsers] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [addOpen, setAddOpen] = React.useState(false);
+
+  React.useEffect(() => {
+    const unsub = window.db.collection("users").onSnapshot(snap => {
+      setUsers(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setLoading(false);
+    });
+    return () => unsub();
+  }, []);
+
+  async function toggleDisable(u) {
+    if (u.email === currentUser?.email) { onToast({ ttl: "Cannot disable your own account" }); return; }
+    const next = !u.disabled;
+    await window.db.collection("users").doc(u.id).update({ disabled: next });
+    onToast({ ttl: next ? "User disabled" : "User enabled", sub: u.email });
+  }
+
+  async function deleteUser(u) {
+    if (u.email === currentUser?.email) { onToast({ ttl: "Cannot delete your own account" }); return; }
+    await window.db.collection("users").doc(u.id).delete();
+    onToast({ ttl: "User deleted", sub: u.email });
+  }
+
+  return (
+    <div className="screen-pad">
+      <div className="toolbar" style={{ marginBottom: 16 }}>
+        <div style={{ fontWeight: 700, fontSize: 16 }}>User Management</div>
+        <div style={{ flex: 1 }} />
+        <button className="btn primary sm" onClick={() => setAddOpen(true)}><Icon name="plus" size={13} /> Add User</button>
+      </div>
+
+      {loading ? (
+        <div className="muted" style={{ textAlign: "center", padding: 40 }}>Loading users…</div>
+      ) : (
+        <div className="card" style={{ overflow: "hidden" }}>
+          <table className="data-table" style={{ width: "100%" }}>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th style={{ width: 120 }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map(u => (
+                <tr key={u.id}>
+                  <td style={{ fontWeight: 500 }}>{u.name || "—"}</td>
+                  <td className="muted">{u.email}</td>
+                  <td><span className={`badge ${u.role === "admin" ? "badge-yellow" : ""}`}>{u.role || "user"}</span></td>
+                  <td>
+                    {u.disabled
+                      ? <span style={{ color: "var(--red)", fontSize: 12 }}>Disabled</span>
+                      : <span style={{ color: "var(--green)", fontSize: 12 }}>Active</span>}
+                  </td>
+                  <td>
+                    <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                      <button className="btn ghost sm" onClick={() => toggleDisable(u)}
+                        disabled={u.email === currentUser?.email}
+                        title={u.disabled ? "Enable user" : "Disable user"}>
+                        {u.disabled ? "Enable" : "Disable"}
+                      </button>
+                      <button className="btn ghost sm" onClick={() => deleteUser(u)}
+                        disabled={u.email === currentUser?.email}
+                        style={{ color: "var(--red)" }}>
+                        <Icon name="x" size={12} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {addOpen && <AddUserModal onClose={() => setAddOpen(false)} onSave={() => { setAddOpen(false); onToast({ ttl: "User created successfully" }); }} />}
+    </div>
+  );
+}
+
 Object.assign(window, {
   TrackingScreen, FleetScreen, NotificationsScreen,
   CustomersScreen, ApiScreen, AnalyticsScreen, BillingScreen,
-  SettingsScreen, MobileDriver,
+  SettingsScreen, MobileDriver, LoginScreen, UsersScreen,
 });
