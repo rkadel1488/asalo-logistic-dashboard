@@ -10,8 +10,6 @@ const NAV = [
   { section: "Customers" },
   { key: "customers", label: "Customers", icon: "contact" },
   { key: "billing", label: "Billing", icon: "receipt" },
-  { section: "Insights" },
-  { key: "analytics", label: "Analytics", icon: "chart" },
   { section: "System" },
   { key: "api", label: "API & Integrations", icon: "link" },
   { key: "settings", label: "Settings", icon: "cog" },

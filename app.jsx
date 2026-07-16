@@ -174,7 +174,6 @@ function App() {
     notifications: ["Operations", "SMS & Notifications"],
     customers:     ["Customers"],
     billing:       ["Customers", "Billing"],
-    analytics:     ["Insights", "Analytics"],
     api:           ["System", "API & Integrations"],
     settings:      ["System", "Settings"],
   };
@@ -221,7 +220,6 @@ function App() {
           {view === "notifications" && <NotificationsScreen log={window.SMS_LOG} onToast={pushToast} />}
           {view === "customers"     && <CustomersScreen customers={customers} orders={orders} onAddCustomer={c => { setCustomers(arr => [...arr, c]); pushToast({ ttl: "Customer added", sub: c.name }); }} onDeleteCustomer={handleDeleteCustomer} onToast={pushToast} />}
           {view === "billing"       && <BillingScreen customers={customers} orders={orders} onToast={pushToast} />}
-          {view === "analytics"     && <AnalyticsScreen />}
           {view === "api"           && <ApiScreen onToast={pushToast} />}
           {view === "settings"      && (
             <SettingsScreen
