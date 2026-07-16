@@ -2234,16 +2234,8 @@ function BillingScreen({ customers, orders, onToast }) {
   }
 
   function exportInvoice(inv) {
-    if (!window.XLSX) { onToast && onToast({ ttl: "XLSX not loaded", sub: "" }); return; }
-    const ws = XLSX.utils.json_to_sheet([{
-      "Invoice": inv.id, "Customer": inv.customer, "Issued": inv.issued, "Due": inv.due,
-      "Amount": `$${inv.amount.toLocaleString()}`, "Status": inv.status,
-      "Paid On": inv.paidOn || "", "Payment Method": inv.paidMethod || "", "Notes": inv.notes || "",
-    }]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, inv.id);
-    XLSX.writeFile(wb, `${inv.id}.xlsx`);
-    onToast && onToast({ ttl: `Exported ${inv.id}`, sub: `${inv.customer} · $${inv.amount.toLocaleString()}` });
+    // Open the styled invoice HTML in a new window — browser saves as PDF via print dialog
+    printInvoice(inv);
   }
 
   function printInvoice(inv) {
@@ -2435,12 +2427,8 @@ function BillingScreen({ customers, orders, onToast }) {
                   </td>
                   <td onClick={e => e.stopPropagation()}>
                     <div className="row" style={{ gap: 4, position: "relative" }}>
-                      {/* Export single invoice */}
-                      <button className="btn ghost sm" title="Export this invoice" onClick={() => exportInvoice(inv)}>
-                        <Icon name="download" size={11} />
-                      </button>
-                      <button className="btn ghost sm" title="Print invoice" onClick={() => printInvoice(inv)}>
-                        <Icon name="print" size={11} />
+                      <button className="btn ghost sm" title="Download as PDF" onClick={() => exportInvoice(inv)}>
+                        <Icon name="download" size={11} /> PDF
                       </button>
                       <button className="btn ghost sm" title="Delete this invoice" onClick={() => setDeleteTarget(inv)}>
                         <Icon name="trash" size={11} />
@@ -2517,8 +2505,7 @@ function BillingScreen({ customers, orders, onToast }) {
             ]}
             actions={
               <React.Fragment>
-                <button className="btn ghost sm" onClick={() => exportInvoice(inv)}><Icon name="download" size={11} /> Export</button>
-                <button className="btn ghost sm" onClick={() => printInvoice(inv)}><Icon name="print" size={11} /> Print</button>
+                <button className="btn ghost sm" onClick={() => exportInvoice(inv)}><Icon name="download" size={11} /> Download PDF</button>
                 {inv.status !== "paid" && (
                   <button className="btn primary sm" onClick={() => { setExpandedId(null); setMarkPaid(inv); }}>✓ Mark as paid</button>
                 )}
