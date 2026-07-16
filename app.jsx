@@ -5,34 +5,43 @@ const { useState, useEffect, useRef, useMemo } = React;
 const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "accentHue": 75,
   "density": "comfortable",
-  "themeMode": "dark",
+  "themeMode": "light",
   "themeBrightness": 0
 }/*EDITMODE-END*/;
 
 const ADMIN_EMAIL = "rkadel1488@gmail.com";
 
+const DEFAULT_PERMISSIONS = {
+  user:  ["pod", "orders", "tracking", "fleet", "notifications", "customers", "billing"],
+  admin: ["pod", "orders", "tracking", "fleet", "notifications", "customers", "billing", "users"],
+};
+
 function AppRoot() {
   const [authState, setAuthState] = useState("loading");
   const [currentUser, setCurrentUser] = useState(null);
   const [userRole, setUserRole] = useState(null);
+  const [displayName, setDisplayName] = useState("");
 
   useEffect(() => {
     const unsub = window.auth.onAuthStateChanged(async user => {
-      if (!user) { setAuthState("out"); setCurrentUser(null); setUserRole(null); return; }
+      if (!user) { setAuthState("out"); setCurrentUser(null); setUserRole(null); setDisplayName(""); return; }
       setCurrentUser(user);
       try {
         if (user.email === ADMIN_EMAIL) {
           setUserRole("admin");
-          window.db.collection("users").doc(user.uid).set({ email: user.email, role: "admin", name: "Admin" }, { merge: true }).catch(() => {});
+          setDisplayName("Main Admin");
+          window.db.collection("users").doc(user.uid).set({ email: user.email, role: "admin", name: "Main Admin" }, { merge: true }).catch(() => {});
         } else {
           const doc = await window.db.collection("users").doc(user.uid).get();
           const data = doc.exists ? doc.data() : {};
           if (data.disabled) { window.auth.signOut(); return; }
           setUserRole(data.role || "user");
+          setDisplayName(data.name || user.email?.split("@")[0] || "User");
         }
       } catch (e) {
         console.error("Auth role lookup failed:", e);
         setUserRole("user");
+        setDisplayName("User");
       }
       setAuthState("in");
     });
@@ -40,22 +49,23 @@ function AppRoot() {
   }, []);
 
   if (authState === "loading") return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "#0d0d14", flexDirection: "column", gap: 12 }}>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "#f5f5f7", flexDirection: "column", gap: 12 }}>
       <div style={{ width: 36, height: 36, borderRadius: 8, background: "#c4a827", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: 18, color: "#000" }}>A</div>
-      <div style={{ color: "#666", fontSize: 13 }}>Loading…</div>
+      <div style={{ color: "#888", fontSize: 13 }}>Loading…</div>
     </div>
   );
   if (authState === "out") return <LoginScreen />;
-  return <Dashboard currentUser={currentUser} userRole={userRole} />;
+  return <Dashboard currentUser={currentUser} userRole={userRole} displayName={displayName} isSuperAdmin={currentUser?.email === ADMIN_EMAIL} />;
 }
 
-function Dashboard({ currentUser, userRole }) {
+function Dashboard({ currentUser, userRole, displayName, isSuperAdmin }) {
   const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
   const [orders, setOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
   const [drivers, setDrivers] = useState([]);
   const [customers, setCustomers] = useState(window.CUSTOMERS);
   const [assignments, setAssignments] = useState({});
+  const [permissions, setPermissions] = useState(DEFAULT_PERMISSIONS);
   const [view, setView] = useState("orders");
   const [selectedId, setSelectedId] = useState(null);
   const [smsState, setSmsState] = useState({ open: false, order: null, trigger: null, preset: null });
@@ -127,6 +137,14 @@ function Dashboard({ currentUser, userRole }) {
   useEffect(() => {
     const unsub = window.db.collection("assignments").doc("current").onSnapshot(doc => {
       if (doc.exists) setAssignments(doc.data() || {});
+    }, () => {});
+    return () => unsub();
+  }, []);
+
+  // Firestore permissions subscription
+  useEffect(() => {
+    const unsub = window.db.collection("settings").doc("permissions").onSnapshot(doc => {
+      if (doc.exists) setPermissions({ ...DEFAULT_PERMISSIONS, ...doc.data() });
     }, () => {});
     return () => unsub();
   }, []);
@@ -231,6 +249,9 @@ function Dashboard({ currentUser, userRole }) {
         orderCount={orders.length}
         userRole={userRole}
         currentUser={currentUser}
+        displayName={displayName}
+        isSuperAdmin={isSuperAdmin}
+        permissions={permissions}
       />
       <div className="main" style={{ position: "relative" }}>
         <Topbar
@@ -239,6 +260,7 @@ function Dashboard({ currentUser, userRole }) {
           onMenu={() => setMobileNavOpen(true)}
           currentUser={currentUser}
           userRole={userRole}
+          displayName={displayName}
         />
         <div className="viewport">
           {ordersLoading && view === "orders" && (
@@ -267,15 +289,15 @@ function Dashboard({ currentUser, userRole }) {
           {view === "notifications" && <NotificationsScreen log={window.SMS_LOG} onToast={pushToast} />}
           {view === "customers"     && <CustomersScreen customers={customers} orders={orders} onAddCustomer={c => { setCustomers(arr => [...arr, c]); pushToast({ ttl: "Customer added", sub: c.name }); }} onDeleteCustomer={handleDeleteCustomer} onToast={pushToast} />}
           {view === "billing"       && <BillingScreen customers={customers} orders={orders} onToast={pushToast} />}
-          {view === "api"           && isAdmin && <ApiScreen onToast={pushToast} />}
-          {view === "settings"      && isAdmin && (
+          {view === "api"           && isSuperAdmin && <ApiScreen onToast={pushToast} />}
+          {view === "settings"      && isSuperAdmin && (
             <SettingsScreen
               theme={{ mode: tweaks.themeMode, brightness: tweaks.themeBrightness }}
               onThemeChange={(t) => { setTweak("themeMode", t.mode); setTweak("themeBrightness", t.brightness); }}
               onToast={pushToast}
             />
           )}
-          {view === "users"         && isAdmin && <UsersScreen currentUser={currentUser} onToast={pushToast} />}
+          {view === "users"         && isAdmin && <UsersScreen currentUser={currentUser} onToast={pushToast} isSuperAdmin={isSuperAdmin} permissions={permissions} onPermissionsChange={p => { setPermissions(p); window.db.collection("settings").doc("permissions").set(p); }} />}
         </div>
 
         <BottomNav
