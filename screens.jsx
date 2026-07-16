@@ -1453,7 +1453,103 @@ function DetailModal({ open, onClose, icon, title, subtitle, rows = [], actions 
   );
 }
 
-function CustomersScreen({ customers, onAddCustomer, onDeleteCustomer, onToast }) {
+function CustomerDetailDrawer({ customer: c, orders, onClose, onDelete }) {
+  const custOrders = (orders || []).filter(o => o.customer === c.name);
+  return (
+    <div className="modal-bd" onClick={onClose}>
+      <div className="modal" style={{ width: 560, maxHeight: "90vh", overflow: "auto", padding: 0 }} onClick={e => e.stopPropagation()}>
+        <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 12, position: "sticky", top: 0, background: "var(--bg-1)", zIndex: 2 }}>
+          <div style={{ width: 40, height: 40, borderRadius: 10, background: "var(--accent-soft)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 16, color: "var(--accent)", flexShrink: 0 }}>
+            {c.name.charAt(0).toUpperCase()}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 700, fontSize: 15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</div>
+            <div style={{ fontSize: 11, color: "var(--fg-3)" }}>{c.tier || "Standard"} account</div>
+          </div>
+          <button className="btn ghost sm" onClick={onDelete}><Icon name="trash" size={12} /></button>
+          <button className="btn ghost sm" onClick={onClose}><Icon name="x" size={14} /></button>
+        </div>
+
+        <div style={{ padding: 18, display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
+            {[
+              { lbl: "Total orders", val: c.orders || 0 },
+              { lbl: "Lifetime value", val: c.value || "$0" },
+              { lbl: "Tier", val: c.tier || "Standard" },
+            ].map(k => (
+              <div key={k.lbl} style={{ background: "var(--bg-2)", border: "1px solid var(--line)", borderRadius: 8, padding: "10px 14px" }}>
+                <div style={{ fontSize: 10, color: "var(--fg-3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>{k.lbl}</div>
+                <div style={{ fontWeight: 700, fontSize: 15 }}>{k.val}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="panel">
+            <div className="panel-h"><span className="ttl">Contact details</span></div>
+            <div className="panel-b" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              {[
+                { lbl: "Primary contact", val: c.contact },
+                { lbl: "Phone", val: c.phone },
+                { lbl: "Email", val: c.billingEmail },
+                { lbl: "Billing address", val: c.billingAddress },
+              ].filter(r => r.val).map(r => (
+                <div key={r.lbl}>
+                  <div style={{ fontSize: 10, color: "var(--fg-3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 3 }}>{r.lbl}</div>
+                  <div style={{ fontSize: 13, fontWeight: 500 }}>{r.val}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {(c.abn || c.vat) && (
+            <div className="panel">
+              <div className="panel-h"><span className="ttl">Business details</span></div>
+              <div className="panel-b" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                {c.abn && <div><div style={{ fontSize: 10, color: "var(--fg-3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 3 }}>ABN</div><div style={{ fontSize: 13, fontWeight: 500, fontFamily: "monospace" }}>{c.abn}</div></div>}
+                {c.vat && <div><div style={{ fontSize: 10, color: "var(--fg-3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 3 }}>GST / VAT</div><div style={{ fontSize: 13, fontWeight: 500, fontFamily: "monospace" }}>{c.vat}</div></div>}
+              </div>
+            </div>
+          )}
+
+          <div className="panel">
+            <div className="panel-h">
+              <span className="ttl">Order history</span>
+              <span className="sub">{custOrders.length} orders</span>
+            </div>
+            {custOrders.length > 0 ? (
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>Order</th>
+                    <th>Route</th>
+                    <th>Cargo</th>
+                    <th>Status</th>
+                    <th style={{ textAlign: "right" }}>Value</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {custOrders.slice(0, 10).map(o => (
+                    <tr key={o.id}>
+                      <td className="mono" style={{ fontWeight: 600 }}>{o.id}</td>
+                      <td style={{ fontSize: 12 }}>{o.origin} → {o.destination}</td>
+                      <td style={{ fontSize: 12 }}>{o.cargo}</td>
+                      <td><StatusPill status={o.status} /></td>
+                      <td className="mono tnum" style={{ textAlign: "right" }}>{o.value}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <div className="panel-b" style={{ color: "var(--fg-3)", fontSize: 13, textAlign: "center", padding: 20 }}>No orders found for this customer</div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CustomersScreen({ customers, orders, onAddCustomer, onDeleteCustomer, onToast }) {
   const [showAdd, setShowAdd] = React.useState(false);
   const [search, setSearch] = React.useState("");
   const [selected, setSelected] = React.useState(null);
@@ -1512,25 +1608,7 @@ function CustomersScreen({ customers, onAddCustomer, onDeleteCustomer, onToast }
         </table>
       </div>
       <NewCustomerModal open={showAdd} onClose={() => setShowAdd(false)} onSave={c => { onAddCustomer(c); setShowAdd(false); }} />
-      <DetailModal
-        open={!!selected}
-        onClose={() => setSelected(null)}
-        icon="contact"
-        title={selected?.name}
-        subtitle={selected ? `${selected.tier} account` : ""}
-        rows={selected ? [
-          { label: "Primary contact", value: selected.contact },
-          { label: "Phone", value: selected.phone },
-          { label: "Total orders", value: selected.orders },
-          { label: "Lifetime value", value: selected.value, bold: true },
-          { label: "Tier", value: selected.tier },
-        ] : []}
-        actions={
-          <button className="btn ghost sm" onClick={() => { setDeleteTarget(selected); setSelected(null); }}>
-            <Icon name="trash" size={11} /> Delete
-          </button>
-        }
-      />
+      {selected && <CustomerDetailDrawer customer={selected} orders={orders} onClose={() => setSelected(null)} onDelete={() => { setDeleteTarget(selected); setSelected(null); }} />}
       <ConfirmModal
         open={!!deleteTarget}
         title="Delete customer"
