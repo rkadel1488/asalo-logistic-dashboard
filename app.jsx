@@ -20,14 +20,19 @@ function AppRoot() {
     const unsub = window.auth.onAuthStateChanged(async user => {
       if (!user) { setAuthState("out"); setCurrentUser(null); setUserRole(null); return; }
       setCurrentUser(user);
-      if (user.email === ADMIN_EMAIL) {
-        setUserRole("admin");
-        window.db.collection("users").doc(user.uid).set({ email: user.email, role: "admin", name: "Admin" }, { merge: true });
-      } else {
-        const doc = await window.db.collection("users").doc(user.uid).get();
-        const data = doc.exists ? doc.data() : {};
-        if (data.disabled) { window.auth.signOut(); return; }
-        setUserRole(data.role || "user");
+      try {
+        if (user.email === ADMIN_EMAIL) {
+          setUserRole("admin");
+          window.db.collection("users").doc(user.uid).set({ email: user.email, role: "admin", name: "Admin" }, { merge: true }).catch(() => {});
+        } else {
+          const doc = await window.db.collection("users").doc(user.uid).get();
+          const data = doc.exists ? doc.data() : {};
+          if (data.disabled) { window.auth.signOut(); return; }
+          setUserRole(data.role || "user");
+        }
+      } catch (e) {
+        console.error("Auth role lookup failed:", e);
+        setUserRole("user");
       }
       setAuthState("in");
     });
@@ -110,11 +115,11 @@ function App({ currentUser, userRole }) {
         (window.DRIVERS || []).forEach(d => {
           batch.set(window.db.collection("drivers").doc(d.id), d);
         });
-        batch.commit();
+        batch.commit().catch(() => {});
       } else {
         setDrivers(snap.docs.map(d => ({ ...d.data(), id: d.id })));
       }
-    });
+    }, () => {});
     return () => unsub();
   }, []);
 
@@ -122,7 +127,7 @@ function App({ currentUser, userRole }) {
   useEffect(() => {
     const unsub = window.db.collection("assignments").doc("current").onSnapshot(doc => {
       if (doc.exists) setAssignments(doc.data() || {});
-    });
+    }, () => {});
     return () => unsub();
   }, []);
 

@@ -3018,7 +3018,7 @@ function UsersScreen({ currentUser, onToast }) {
 }
 
 Object.assign(window, {
-  TrackingScreen, FleetScreen, NotificationsScreen,
+  PODScreen, TrackingScreen, FleetScreen, NotificationsScreen,
   CustomersScreen, ApiScreen, AnalyticsScreen, BillingScreen,
   SettingsScreen, MobileDriver, LoginScreen, UsersScreen,
 });
