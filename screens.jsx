@@ -2960,7 +2960,52 @@ function AddUserModal({ onClose, onSave }) {
   );
 }
 
-function UsersScreen({ currentUser, onToast }) {
+const PERMISSION_NAV = [
+  { key: "pod", label: "POD" },
+  { key: "orders", label: "Orders" },
+  { key: "tracking", label: "Live Tracking" },
+  { key: "fleet", label: "Fleet & Drivers" },
+  { key: "notifications", label: "SMS & Notifications" },
+  { key: "customers", label: "Customers" },
+  { key: "billing", label: "Billing" },
+  { key: "users", label: "User Management (admin only)" },
+];
+
+function PermissionsPanel({ permissions, onChange }) {
+  function toggle(role, key) {
+    const current = permissions[role] || [];
+    const next = current.includes(key) ? current.filter(k => k !== key) : [...current, key];
+    onChange({ ...permissions, [role]: next });
+  }
+  return (
+    <div className="card" style={{ padding: 20, marginTop: 24 }}>
+      <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>Access Control</div>
+      <div className="muted" style={{ fontSize: 12, marginBottom: 16 }}>Configure which sections each role can access. Settings and API Integrations are always restricted to the Main Admin only.</div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
+        {["user", "admin"].map(role => (
+          <div key={role}>
+            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10, textTransform: "capitalize" }}>{role === "admin" ? "Administrator" : "User"}</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {PERMISSION_NAV.filter(n => role === "admin" || n.key !== "users").map(n => (
+                <label key={n.key} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13 }}>
+                  <input
+                    type="checkbox"
+                    checked={(permissions[role] || []).includes(n.key)}
+                    onChange={() => toggle(role, n.key)}
+                    style={{ accentColor: "var(--accent)", width: 15, height: 15 }}
+                  />
+                  {n.label}
+                </label>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function UsersScreen({ currentUser, onToast, isSuperAdmin, permissions, onPermissionsChange }) {
   const [users, setUsers] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
   const [addOpen, setAddOpen] = React.useState(false);
@@ -3043,6 +3088,10 @@ function UsersScreen({ currentUser, onToast }) {
             </tbody>
           </table>
         </div>
+      )}
+
+      {isSuperAdmin && permissions && onPermissionsChange && (
+        <PermissionsPanel permissions={permissions} onChange={onPermissionsChange} />
       )}
 
       {addOpen && <AddUserModal onClose={() => setAddOpen(false)} onSave={() => { setAddOpen(false); onToast({ ttl: "User created successfully" }); }} />}

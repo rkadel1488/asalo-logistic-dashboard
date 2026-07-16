@@ -16,11 +16,18 @@ const NAV_ALL = [
   { key: "settings", label: "Settings", icon: "cog", adminOnly: true },
 ];
 
-function Sidebar({ active, onNav, open, onClose, orderCount, userRole, currentUser }) {
+function Sidebar({ active, onNav, open, onClose, orderCount, userRole, currentUser, displayName, isSuperAdmin, permissions }) {
   const isAdmin = userRole === "admin";
-  const nav = NAV_ALL.filter(n => !n.adminOnly || isAdmin);
-  const initials = currentUser?.email ? currentUser.email.substring(0, 2).toUpperCase() : "??";
-  const displayName = currentUser?.displayName || currentUser?.email?.split("@")[0] || "User";
+  const allowedKeys = isSuperAdmin ? null : (permissions?.[userRole] || []);
+  const nav = NAV_ALL.filter(n => {
+    if (n.section) return true;
+    if (n.key === "api" || n.key === "settings") return isSuperAdmin;
+    if (n.adminOnly && !isAdmin && !isSuperAdmin) return false;
+    if (allowedKeys && !allowedKeys.includes(n.key)) return false;
+    return true;
+  });
+  const name = displayName || "User";
+  const initials = name.substring(0, 2).toUpperCase();
 
   return (
     <React.Fragment>
@@ -55,23 +62,32 @@ function Sidebar({ active, onNav, open, onClose, orderCount, userRole, currentUs
           <div className="sb-user">
             <div className="sb-avatar">{initials}</div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div className="sb-uname">{displayName}</div>
-              <div className="sb-urole">{isAdmin ? "Administrator" : "User"}</div>
+              <div className="sb-uname">{name}</div>
+              <div className="sb-urole">{isSuperAdmin ? "Main Admin" : isAdmin ? "Administrator" : "User"}</div>
             </div>
-            <button title="Sign out" onClick={() => window.auth.signOut()}
-              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--fg-3)", padding: 4, display: "flex", alignItems: "center" }}>
-              <Icon name="x" size={14} />
-            </button>
           </div>
+          <button
+            onClick={() => window.auth.signOut()}
+            style={{
+              width: "100%", marginTop: 8, padding: "8px 12px",
+              background: "var(--bg-3)", border: "1px solid var(--bg-3)",
+              borderRadius: 8, cursor: "pointer", color: "var(--fg-1)",
+              fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center",
+              justifyContent: "center", gap: 6,
+            }}
+          >
+            <Icon name="x" size={13} /> Sign Out
+          </button>
         </div>
       </aside>
     </React.Fragment>
   );
 }
 
-function Topbar({ crumbs, onSyncing, onMenu, currentUser, userRole }) {
+function Topbar({ crumbs, onSyncing, onMenu, currentUser, userRole, displayName }) {
   const [q, setQ] = React.useState("");
-  const initials = currentUser?.email ? currentUser.email.substring(0, 2).toUpperCase() : "??";
+  const name = displayName || currentUser?.email?.split("@")[0] || "User";
+  const initials = name.substring(0, 2).toUpperCase();
   return (
     <header className="topbar">
       <button className="btn ghost sm menu-btn" onClick={onMenu} aria-label="Open menu">
@@ -109,7 +125,7 @@ function Topbar({ crumbs, onSyncing, onMenu, currentUser, userRole }) {
       <button className="btn sm tb-bell">
         <Icon name="bell" size={13} />
       </button>
-      <div title={`${currentUser?.email} · ${userRole}`} className="sb-avatar" style={{ width: 28, height: 28, fontSize: 11, cursor: "default" }}>{initials}</div>
+      <div title={`${name} · ${userRole}`} className="sb-avatar" style={{ width: 28, height: 28, fontSize: 11, cursor: "default" }}>{initials}</div>
     </header>
   );
 }
