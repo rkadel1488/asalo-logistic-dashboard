@@ -858,6 +858,14 @@ function FleetScreen({ drivers, assignments, orders, onAddDriver, onDeleteDriver
   const filtered = drivers.filter(d => statusFilter === "all" || effectiveStatus(d) === statusFilter);
   const onRouteCount = drivers.filter(d => driverOrderMap[d.id]).length;
 
+  // Computed KPIs from real data
+  const fleetUtil = drivers.length ? Math.round((onRouteCount / drivers.length) * 100) : 0;
+  const reeferTotal = drivers.filter(d => d.truck && d.truck.toLowerCase().includes("reefer")).length;
+  const reeferActive = drivers.filter(d => (d.truck && d.truck.toLowerCase().includes("reefer")) && driverOrderMap[d.id]).length;
+  const hosValues = drivers.map(d => typeof d.hos === "number" ? d.hos : null).filter(v => v !== null);
+  const avgHosMin = hosValues.length ? Math.round(hosValues.reduce((a, b) => a + b, 0) / hosValues.length) : null;
+  const avgHosStr = avgHosMin !== null ? `${Math.floor(avgHosMin / 60)}h ${avgHosMin % 60}m` : "—";
+
   function handleSend(driver, text) {
     onToast && onToast({ ttl: `Message sent to ${driver.name}`, sub: `${driver.truck} · ${driver.phone}` });
   }
@@ -867,9 +875,9 @@ function FleetScreen({ drivers, assignments, orders, onAddDriver, onDeleteDriver
       {/* KPIs */}
       <div className="kpis">
         <div className="kpi"><div className="lbl">Active drivers</div><div className="val">{drivers.length}</div><div className="delta up">{onRouteCount} on route now</div></div>
-        <div className="kpi"><div className="lbl">Fleet utilisation</div><div className="val">78%</div><div className="delta">Target 85%</div><Sparkline data={[60,65,72,68,74,76,78,80,77,78,76,78]} /></div>
-        <div className="kpi"><div className="lbl">Reefer trucks</div><div className="val">6 / 8</div><div className="delta">2 in service</div></div>
-        <div className="kpi"><div className="lbl">Avg HOS used</div><div className="val">7h 24m</div><div className="delta">of 12h limit</div></div>
+        <div className="kpi"><div className="lbl">Fleet utilisation</div><div className="val">{drivers.length ? `${fleetUtil}%` : "—"}</div><div className="delta">Target 85%</div></div>
+        <div className="kpi"><div className="lbl">Reefer trucks</div><div className="val">{reeferTotal ? `${reeferActive} / ${reeferTotal}` : "—"}</div><div className="delta">{reeferActive} in service</div></div>
+        <div className="kpi"><div className="lbl">Avg HOS used</div><div className="val">{avgHosStr}</div><div className="delta">of 12h limit</div></div>
       </div>
 
       {/* Table */}
