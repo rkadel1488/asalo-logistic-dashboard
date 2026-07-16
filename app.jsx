@@ -191,7 +191,7 @@ function App() {
       <div className="main" style={{ position: "relative" }}>
         <Topbar
           crumbs={crumbsByView[view] || ["Dashboard"]}
-          onSyncing={() => pushToast({ ttl: "Synced with TransVirtual", sub: "1,284 events · 0 errors" })}
+          onSyncing={() => pushToast({ ttl: "Sync complete", sub: "1,284 events · 0 errors" })}
           onMenu={() => setMobileNavOpen(true)}
         />
         <div className="viewport">

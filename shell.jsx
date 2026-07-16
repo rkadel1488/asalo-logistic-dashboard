@@ -93,7 +93,7 @@ function Topbar({ crumbs, onSyncing, onMenu }) {
 
       <span className="tb-pill">
         <span className="dot" />
-        TransVirtual API · synced 14s ago
+        ASALO · synced 14s ago
       </span>
       <button className="btn ghost sm tb-sync" onClick={onSyncing}>
         <Icon name="refresh" size={13} /> Sync
