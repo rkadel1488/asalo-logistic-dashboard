@@ -2866,10 +2866,10 @@ function LoginScreen() {
       </div>
 
       <div style={{ display: "flex", background: "#1a1a28", borderRadius: 8, padding: 3, width: "100%", maxWidth: 340 }}>
-        {["phone", "admin"].map(m => (
+        {["phone", "customer", "admin"].map(m => (
           <button key={m} onClick={() => { setMode(m); setError(""); }}
-            style={{ flex: 1, padding: "7px 0", border: "none", borderRadius: 6, fontWeight: 600, fontSize: 13, cursor: "pointer", background: mode === m ? "#c4a827" : "transparent", color: mode === m ? "#000" : "#666", transition: "all 120ms" }}>
-            {m === "phone" ? "Staff Login" : "Admin"}
+            style={{ flex: 1, padding: "7px 0", border: "none", borderRadius: 6, fontWeight: 600, fontSize: 12, cursor: "pointer", background: mode === m ? "#c4a827" : "transparent", color: mode === m ? "#000" : "#666", transition: "all 120ms" }}>
+            {m === "phone" ? "Staff" : m === "customer" ? "Customer" : "Admin"}
           </button>
         ))}
       </div>
@@ -2877,6 +2877,16 @@ function LoginScreen() {
       {mode === "phone" ? (
         <form onSubmit={phoneLogin} style={{ display: "flex", flexDirection: "column", gap: 12, width: "100%", maxWidth: 340 }}>
           <input type="tel" placeholder="Your phone number" value={phone} onChange={e => setPhone(e.target.value)} required style={inputStyle} />
+          {error && <div style={{ color: "#f87171", fontSize: 12.5, padding: "6px 10px", background: "rgba(248,113,113,0.1)", borderRadius: 6 }}>{error}</div>}
+          <button type="submit" disabled={loading}
+            style={{ background: "#c4a827", color: "#000", border: "none", borderRadius: 8, padding: "11px 0", fontWeight: 700, fontSize: 14, cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.7 : 1 }}>
+            {loading ? "Signing in…" : "Sign in"}
+          </button>
+        </form>
+      ) : mode === "customer" ? (
+        <form onSubmit={adminLogin} style={{ display: "flex", flexDirection: "column", gap: 12, width: "100%", maxWidth: 340 }}>
+          <input type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)} required style={inputStyle} />
+          <input type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} required style={inputStyle} />
           {error && <div style={{ color: "#f87171", fontSize: 12.5, padding: "6px 10px", background: "rgba(248,113,113,0.1)", borderRadius: 6 }}>{error}</div>}
           <button type="submit" disabled={loading}
             style={{ background: "#c4a827", color: "#000", border: "none", borderRadius: 8, padding: "11px 0", fontWeight: 700, fontSize: 14, cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.7 : 1 }}>
@@ -2901,31 +2911,47 @@ function LoginScreen() {
 function AddUserModal({ onClose, onSave }) {
   const [name, setName] = React.useState("");
   const [phone, setPhone] = React.useState("");
+  const [email, setEmail] = React.useState("");
+  const [password, setPassword] = React.useState("");
+  const [company, setCompany] = React.useState("");
   const [role, setRole] = React.useState("user");
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState("");
 
+  const isCustomer = role === "customer";
+
   async function handleSave(e) {
     e.preventDefault();
-    if (!phone.trim()) return;
     setLoading(true); setError("");
     try {
-      const norm = phone.replace(/\s+/g, "");
+      let uid;
       const secondary = firebase.initializeApp(window.FIREBASE_CONFIG, "tmp_" + Date.now());
-      const cred = await secondary.auth().createUserWithEmailAndPassword(`${norm}@asalo.app`, norm);
-      const uid = cred.user.uid;
+      if (isCustomer) {
+        if (!email.trim() || !password.trim()) { setError("Email and password are required."); setLoading(false); return; }
+        const cred = await secondary.auth().createUserWithEmailAndPassword(email.trim(), password.trim());
+        uid = cred.user.uid;
+      } else {
+        if (!phone.trim()) { setError("Phone number is required."); setLoading(false); return; }
+        const norm = phone.replace(/\s+/g, "");
+        const cred = await secondary.auth().createUserWithEmailAndPassword(`${norm}@asalo.app`, norm);
+        uid = cred.user.uid;
+      }
       await secondary.auth().signOut();
       secondary.delete();
       await window.db.collection("users").doc(uid).set({
-        name: name.trim() || norm,
-        phone: norm,
+        name: name.trim() || email.trim() || phone.trim(),
+        ...(isCustomer ? { email: email.trim(), customerName: company.trim() || name.trim() } : { phone: phone.replace(/\s+/g, "") }),
         role,
         disabled: false,
         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       });
       onSave();
     } catch (err) {
-      const msgs = { "auth/email-already-in-use": "This phone number is already registered." };
+      const msgs = {
+        "auth/email-already-in-use": isCustomer ? "This email is already registered." : "This phone number is already registered.",
+        "auth/weak-password": "Password must be at least 6 characters.",
+        "auth/invalid-email": "Invalid email address.",
+      };
       setError(msgs[err.code] || err.message);
       setLoading(false);
     }
@@ -2935,28 +2961,49 @@ function AddUserModal({ onClose, onSave }) {
     <div className="modal-backdrop">
       <div className="modal" style={{ maxWidth: 420 }}>
         <div className="modal-header">
-          <div className="modal-title">Add Staff User</div>
+          <div className="modal-title">Add User</div>
           <button className="btn ghost sm" onClick={onClose}><Icon name="x" size={16} /></button>
         </div>
         <form onSubmit={handleSave}>
           <div className="modal-body" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <div className="field">
-              <label className="label">Name</label>
-              <input className="input" placeholder="Full name" value={name} onChange={e => setName(e.target.value)} />
-            </div>
-            <div className="field">
-              <label className="label">Phone Number *</label>
-              <input className="input" type="tel" placeholder="+61 4xx xxx xxx" value={phone} onChange={e => setPhone(e.target.value)} required />
-            </div>
-            <div className="field">
               <label className="label">Role</label>
-              <select className="input" value={role} onChange={e => setRole(e.target.value)}>
-                <option value="user">User</option>
+              <select className="input" value={role} onChange={e => { setRole(e.target.value); setError(""); }}>
+                <option value="user">Staff User</option>
                 <option value="admin">Admin</option>
+                <option value="customer">Customer</option>
               </select>
             </div>
+            <div className="field">
+              <label className="label">Full Name</label>
+              <input className="input" placeholder="Full name" value={name} onChange={e => setName(e.target.value)} />
+            </div>
+            {isCustomer ? (
+              <>
+                <div className="field">
+                  <label className="label">Email Address *</label>
+                  <input className="input" type="email" placeholder="customer@company.com" value={email} onChange={e => setEmail(e.target.value)} required />
+                </div>
+                <div className="field">
+                  <label className="label">Password *</label>
+                  <input className="input" type="password" placeholder="Min 6 characters" value={password} onChange={e => setPassword(e.target.value)} required />
+                </div>
+                <div className="field">
+                  <label className="label">Company Name</label>
+                  <input className="input" placeholder="Company / business name" value={company} onChange={e => setCompany(e.target.value)} />
+                </div>
+                <div className="muted" style={{ fontSize: 11.5 }}>Customer logs in via the Customer tab with their email and password.</div>
+              </>
+            ) : (
+              <>
+                <div className="field">
+                  <label className="label">Phone Number *</label>
+                  <input className="input" type="tel" placeholder="+61 4xx xxx xxx" value={phone} onChange={e => setPhone(e.target.value)} required />
+                </div>
+                <div className="muted" style={{ fontSize: 11.5 }}>Staff log in using their phone number — no password needed.</div>
+              </>
+            )}
             {error && <div style={{ color: "var(--red)", fontSize: 12.5 }}>{error}</div>}
-            <div className="muted" style={{ fontSize: 11.5 }}>Staff log in via OTP sent to this number — no password needed.</div>
           </div>
           <div className="modal-footer">
             <button type="button" className="btn ghost" onClick={onClose}>Cancel</button>
@@ -3107,8 +3154,230 @@ function UsersScreen({ currentUser, onToast, isSuperAdmin, permissions, onPermis
   );
 }
 
+/* ============== CUSTOMER PORTAL ============== */
+
+function CustomerPortal({ currentUser, userDoc, displayName }) {
+  const [tab, setTab] = React.useState("orders");
+  const [orders, setOrders] = React.useState([]);
+  const [ordersLoading, setOrdersLoading] = React.useState(true);
+  const [toasts, setToasts] = React.useState([]);
+
+  const companyName = userDoc?.customerName || userDoc?.name || "";
+  const contactName = displayName || userDoc?.name || "";
+  const contactPhone = userDoc?.phone || "";
+
+  function pushToast(t) {
+    const id = Math.random().toString(36).slice(2);
+    setToasts(arr => [...arr, { id, ...t }]);
+    setTimeout(() => setToasts(arr => arr.filter(x => x.id !== id)), 3800);
+  }
+
+  React.useEffect(() => {
+    if (!companyName) { setOrdersLoading(false); return; }
+    const unsub = window.db.collection("orders")
+      .where("customer", "==", companyName)
+      .onSnapshot(snap => {
+        const docs = snap.docs.map(d => ({ ...d.data(), id: d.id }));
+        docs.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+        setOrders(docs);
+        setOrdersLoading(false);
+      }, () => setOrdersLoading(false));
+    return () => unsub();
+  }, [companyName]);
+
+  const statusColors = {
+    new: "#6b7280", processing: "#f59e0b", loaded: "#3b82f6",
+    in_transit: "#8b5cf6", delivered: "#10b981", delayed: "#ef4444",
+  };
+  const statusLabels = {
+    new: "New", processing: "Processing", loaded: "Loaded",
+    in_transit: "In Transit", delivered: "Delivered", delayed: "Delayed",
+  };
+
+  const tabs = [
+    { key: "orders", label: "My Orders" },
+    { key: "new", label: "Place Order" },
+    { key: "invoices", label: "My Invoices" },
+  ];
+
+  return (
+    <div style={{ minHeight: "100vh", background: "var(--bg-0)", display: "flex", flexDirection: "column" }}>
+      <header style={{ background: "var(--bg-1)", borderBottom: "1px solid var(--bg-3)", padding: "0 24px", display: "flex", alignItems: "center", gap: 16, height: 56 }}>
+        <div style={{ width: 32, height: 32, borderRadius: 7, background: "#c4a827", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: 16, color: "#000", flexShrink: 0 }}>A</div>
+        <div style={{ fontWeight: 700, fontSize: 15, color: "var(--fg-0)" }}>ASALO Logistic</div>
+        <div style={{ flex: 1 }} />
+        <div style={{ fontSize: 13, color: "var(--fg-2)" }}>{companyName || contactName}</div>
+        <button onClick={() => window.auth.signOut()}
+          style={{ background: "var(--bg-3)", border: "none", borderRadius: 7, padding: "6px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer", color: "var(--fg-1)" }}>
+          Sign Out
+        </button>
+      </header>
+
+      <div style={{ borderBottom: "1px solid var(--bg-3)", padding: "0 24px", display: "flex", background: "var(--bg-1)" }}>
+        {tabs.map(t => (
+          <button key={t.key} onClick={() => setTab(t.key)}
+            style={{ padding: "14px 20px", border: "none", background: "none", cursor: "pointer", fontSize: 13, fontWeight: 600,
+              color: tab === t.key ? "var(--accent)" : "var(--fg-2)",
+              borderBottom: tab === t.key ? "2px solid var(--accent)" : "2px solid transparent",
+              transition: "all 120ms" }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ flex: 1, padding: 24, maxWidth: 900, width: "100%", margin: "0 auto", boxSizing: "border-box" }}>
+        {tab === "orders" && <CustomerOrdersTab orders={orders} loading={ordersLoading} statusColors={statusColors} statusLabels={statusLabels} />}
+        {tab === "new" && <CustomerNewOrderTab companyName={companyName} contactName={contactName} contactPhone={contactPhone} onSubmitted={() => { setTab("orders"); pushToast({ ttl: "Order placed", sub: "We'll be in touch shortly." }); }} />}
+        {tab === "invoices" && <CustomerInvoicesTab orders={orders} loading={ordersLoading} />}
+      </div>
+
+      <div className="toast-host">
+        {toasts.map(t => (
+          <div key={t.id} className="toast"><div className="ttl">{t.ttl}</div>{t.sub && <div className="sub">{t.sub}</div>}</div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CustomerOrdersTab({ orders, loading, statusColors, statusLabels }) {
+  if (loading) return <div className="muted" style={{ padding: 40, textAlign: "center" }}>Loading orders…</div>;
+  if (!orders.length) return (
+    <div style={{ textAlign: "center", padding: 60, color: "var(--fg-3)" }}>
+      <div style={{ fontSize: 32, marginBottom: 12 }}>📦</div>
+      <div style={{ fontWeight: 600, marginBottom: 6 }}>No orders yet</div>
+      <div style={{ fontSize: 13 }}>Use "Place Order" to request a delivery.</div>
+    </div>
+  );
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {orders.map(o => (
+        <div key={o.id} className="card" style={{ padding: 20 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+            <span style={{ fontWeight: 700, fontSize: 14 }}>{o.id}</span>
+            <span style={{ padding: "3px 10px", borderRadius: 20, fontSize: 12, fontWeight: 600, background: (statusColors[o.status] || "#6b7280") + "22", color: statusColors[o.status] || "#6b7280" }}>
+              {statusLabels[o.status] || o.status}
+            </span>
+            <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--fg-3)" }}>{o.placed || ""}</span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 24px", fontSize: 13 }}>
+            <div><span style={{ color: "var(--fg-3)" }}>From: </span>{o.origin}</div>
+            <div><span style={{ color: "var(--fg-3)" }}>To: </span>{o.destination}</div>
+            <div><span style={{ color: "var(--fg-3)" }}>Cargo: </span>{o.cargo}{o.weight ? ` · ${o.weight}` : ""}</div>
+            <div><span style={{ color: "var(--fg-3)" }}>ETA: </span>{o.eta || "—"}</div>
+          </div>
+          {o.status === "in_transit" && o.progress != null && (
+            <div style={{ marginTop: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--fg-3)", marginBottom: 4 }}>
+                <span>Delivery progress</span><span>{Math.round(o.progress * 100)}%</span>
+              </div>
+              <div style={{ height: 6, background: "var(--bg-3)", borderRadius: 3, overflow: "hidden" }}>
+                <div style={{ height: "100%", width: `${o.progress * 100}%`, background: "var(--accent)", borderRadius: 3 }} />
+              </div>
+              {o.driver && <div style={{ fontSize: 12, color: "var(--fg-3)", marginTop: 4 }}>Driver: {o.driver}</div>}
+            </div>
+          )}
+          {o.value && o.value !== "$0" && <div style={{ marginTop: 10, fontSize: 13, fontWeight: 600 }}>Value: {o.value}</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CustomerNewOrderTab({ companyName, contactName, contactPhone, onSubmitted }) {
+  const [origin, setOrigin] = React.useState("");
+  const [destination, setDestination] = React.useState("");
+  const [cargo, setCargo] = React.useState("Pallets");
+  const [weight, setWeight] = React.useState("");
+  const [items, setItems] = React.useState("");
+  const [eta, setEta] = React.useState("");
+  const [note, setNote] = React.useState("");
+  const [loading, setLoading] = React.useState(false);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!origin.trim() || !destination.trim()) return;
+    setLoading(true);
+    const orderId = `ASL-${Math.floor(10000 + Math.random() * 90000)}`;
+    await window.db.collection("orders").doc(orderId).set({
+      id: orderId, customer: companyName, contactName, contact: contactPhone,
+      origin: origin.trim(), destination: destination.trim(), cargo,
+      weight: weight ? `${weight} kg` : "", items: items ? parseInt(items) : 0,
+      eta: eta || "", note: note.trim(), status: "new", priority: "normal",
+      value: "$0", placed: "Just now",
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    setLoading(false);
+    onSubmitted();
+  }
+
+  const fs = { display: "flex", flexDirection: "column", gap: 6 };
+  const ls = { fontSize: 12, fontWeight: 600, color: "var(--fg-2)" };
+
+  return (
+    <div className="card" style={{ padding: 28, maxWidth: 620 }}>
+      <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 20 }}>Place a New Order</div>
+      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          <div style={fs}><label style={ls}>Pickup Location *</label><input className="input" placeholder="Origin / warehouse" value={origin} onChange={e => setOrigin(e.target.value)} required /></div>
+          <div style={fs}><label style={ls}>Delivery Address *</label><input className="input" placeholder="Destination" value={destination} onChange={e => setDestination(e.target.value)} required /></div>
+          <div style={fs}><label style={ls}>Cargo Type</label>
+            <select className="input" value={cargo} onChange={e => setCargo(e.target.value)}>
+              {["Pallets","Parcels","Barrels","Cold chain"].map(c => <option key={c}>{c}</option>)}
+            </select>
+          </div>
+          <div style={fs}><label style={ls}>Weight (kg)</label><input className="input" type="number" placeholder="e.g. 500" value={weight} onChange={e => setWeight(e.target.value)} /></div>
+          <div style={fs}><label style={ls}>Number of Items</label><input className="input" type="number" placeholder="e.g. 10" value={items} onChange={e => setItems(e.target.value)} /></div>
+          <div style={fs}><label style={ls}>Requested Delivery Date</label><input className="input" type="date" value={eta} onChange={e => setEta(e.target.value)} /></div>
+        </div>
+        <div style={fs}><label style={ls}>Notes / Special Instructions</label><textarea className="input" rows={3} placeholder="Any special handling requirements…" value={note} onChange={e => setNote(e.target.value)} style={{ resize: "vertical" }} /></div>
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <button type="submit" className="btn primary" disabled={loading} style={{ padding: "10px 28px" }}>{loading ? "Submitting…" : "Submit Order"}</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function CustomerInvoicesTab({ orders, loading }) {
+  if (loading) return <div className="muted" style={{ padding: 40, textAlign: "center" }}>Loading…</div>;
+  const billed = orders.filter(o => o.value && o.value !== "$0");
+  if (!billed.length) return (
+    <div style={{ textAlign: "center", padding: 60, color: "var(--fg-3)" }}>
+      <div style={{ fontSize: 32, marginBottom: 12 }}>🧾</div>
+      <div style={{ fontWeight: 600, marginBottom: 6 }}>No invoices yet</div>
+      <div style={{ fontSize: 13 }}>Invoices will appear here once your orders are processed.</div>
+    </div>
+  );
+  const total = billed.reduce((sum, o) => { const n = parseFloat((o.value || "0").replace(/[^0-9.]/g, "")); return sum + (isNaN(n) ? 0 : n); }, 0);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div className="card" style={{ padding: 20, display: "flex", gap: 32 }}>
+        <div><div style={{ fontSize: 12, color: "var(--fg-3)", marginBottom: 2 }}>Total Orders</div><div style={{ fontWeight: 700, fontSize: 20 }}>{billed.length}</div></div>
+        <div><div style={{ fontSize: 12, color: "var(--fg-3)", marginBottom: 2 }}>Total Value</div><div style={{ fontWeight: 700, fontSize: 20 }}>${total.toLocaleString()}</div></div>
+      </div>
+      <div className="card" style={{ overflow: "hidden" }}>
+        <table className="data-table" style={{ width: "100%" }}>
+          <thead><tr><th>Order Ref</th><th>Route</th><th>Status</th><th>Value</th><th>ETA</th></tr></thead>
+          <tbody>
+            {billed.map(o => (
+              <tr key={o.id}>
+                <td style={{ fontWeight: 600 }}>{o.id}</td>
+                <td className="muted" style={{ fontSize: 12 }}>{o.origin} → {o.destination}</td>
+                <td><span style={{ fontSize: 12, fontWeight: 600, textTransform: "capitalize" }}>{(o.status || "").replace("_", " ")}</span></td>
+                <td style={{ fontWeight: 600 }}>{o.value}</td>
+                <td className="muted" style={{ fontSize: 12 }}>{o.eta || "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 Object.assign(window, {
   PODScreen, TrackingScreen, FleetScreen, NotificationsScreen,
   CustomersScreen, ApiScreen, AnalyticsScreen, BillingScreen,
-  SettingsScreen, MobileDriver, LoginScreen, UsersScreen,
+  SettingsScreen, MobileDriver, LoginScreen, UsersScreen, CustomerPortal,
 });

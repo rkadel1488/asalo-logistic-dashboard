@@ -21,15 +21,17 @@ function AppRoot() {
   const [currentUser, setCurrentUser] = useState(null);
   const [userRole, setUserRole] = useState(null);
   const [displayName, setDisplayName] = useState("");
+  const [userDoc, setUserDoc] = useState(null);
 
   useEffect(() => {
     const unsub = window.auth.onAuthStateChanged(async user => {
-      if (!user) { setAuthState("out"); setCurrentUser(null); setUserRole(null); setDisplayName(""); return; }
+      if (!user) { setAuthState("out"); setCurrentUser(null); setUserRole(null); setDisplayName(""); setUserDoc(null); return; }
       setCurrentUser(user);
       try {
         if (user.email === ADMIN_EMAIL) {
           setUserRole("admin");
           setDisplayName("Main Admin");
+          setUserDoc({ name: "Main Admin", role: "admin" });
           window.db.collection("users").doc(user.uid).set({ email: user.email, role: "admin", name: "Main Admin" }, { merge: true }).catch(() => {});
         } else {
           const doc = await window.db.collection("users").doc(user.uid).get();
@@ -37,11 +39,13 @@ function AppRoot() {
           if (data.disabled) { window.auth.signOut(); return; }
           setUserRole(data.role || "user");
           setDisplayName(data.name || user.email?.split("@")[0] || "User");
+          setUserDoc(data);
         }
       } catch (e) {
         console.error("Auth role lookup failed:", e);
         setUserRole("user");
         setDisplayName("User");
+        setUserDoc(null);
       }
       setAuthState("in");
     });
@@ -55,6 +59,7 @@ function AppRoot() {
     </div>
   );
   if (authState === "out") return <LoginScreen />;
+  if (userRole === "customer") return <CustomerPortal currentUser={currentUser} userDoc={userDoc} displayName={displayName} />;
   return <Dashboard currentUser={currentUser} userRole={userRole} displayName={displayName} isSuperAdmin={currentUser?.email === ADMIN_EMAIL} />;
 }
 
