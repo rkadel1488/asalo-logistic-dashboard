@@ -2806,12 +2806,46 @@ function ToggleRow({ label, sub, defaultOn = false }) {
 }
 
 function LoginScreen() {
+  const [mode, setMode] = React.useState("phone");
+  const [phone, setPhone] = React.useState("");
+  const [otp, setOtp] = React.useState("");
+  const [confirmResult, setConfirmResult] = React.useState(null);
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState(false);
+  const recaptchaContainerRef = React.useRef(null);
 
-  async function handleLogin(e) {
+  const inputStyle = { background: "#1a1a28", border: "1px solid #333", borderRadius: 8, padding: "10px 14px", color: "#fff", fontSize: 14, outline: "none", width: "100%", boxSizing: "border-box" };
+
+  async function sendOtp(e) {
+    e.preventDefault();
+    setError(""); setLoading(true);
+    try {
+      if (!window._rcVerifier) {
+        window._rcVerifier = new firebase.auth.RecaptchaVerifier(recaptchaContainerRef.current, { size: "invisible" });
+      }
+      const result = await window.auth.signInWithPhoneNumber(phone.trim(), window._rcVerifier);
+      setConfirmResult(result);
+    } catch (err) {
+      window._rcVerifier = null;
+      setError(err.message || "Failed to send OTP. Check the number and try again.");
+    }
+    setLoading(false);
+  }
+
+  async function verifyOtp(e) {
+    e.preventDefault();
+    setError(""); setLoading(true);
+    try {
+      await confirmResult.confirm(otp.trim());
+    } catch (err) {
+      setError("Invalid code. Please try again.");
+    }
+    setLoading(false);
+  }
+
+  async function adminLogin(e) {
     e.preventDefault();
     setError(""); setLoading(true);
     try {
@@ -2831,63 +2865,88 @@ function LoginScreen() {
 
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "#0d0d14", flexDirection: "column", gap: 24, padding: 24 }}>
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, marginBottom: 8 }}>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, marginBottom: 4 }}>
         <div style={{ width: 44, height: 44, borderRadius: 10, background: "#c4a827", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: 22, color: "#000" }}>A</div>
         <div style={{ color: "#fff", fontWeight: 700, fontSize: 18, letterSpacing: 0.5 }}>ASALO Logistic OS</div>
         <div style={{ color: "#666", fontSize: 13 }}>Sign in to continue</div>
       </div>
-      <form onSubmit={handleLogin} style={{ display: "flex", flexDirection: "column", gap: 12, width: "100%", maxWidth: 340 }}>
-        <input
-          type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)} required
-          style={{ background: "#1a1a28", border: "1px solid #333", borderRadius: 8, padding: "10px 14px", color: "#fff", fontSize: 14, outline: "none" }}
-        />
-        <input
-          type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} required
-          style={{ background: "#1a1a28", border: "1px solid #333", borderRadius: 8, padding: "10px 14px", color: "#fff", fontSize: 14, outline: "none" }}
-        />
-        {error && <div style={{ color: "#f87171", fontSize: 12.5, padding: "6px 10px", background: "rgba(248,113,113,0.1)", borderRadius: 6 }}>{error}</div>}
-        <button type="submit" disabled={loading}
-          style={{ background: "#c4a827", color: "#000", border: "none", borderRadius: 8, padding: "11px 0", fontWeight: 700, fontSize: 14, cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.7 : 1 }}>
-          {loading ? "Signing in…" : "Sign in"}
-        </button>
-      </form>
+
+      <div style={{ display: "flex", background: "#1a1a28", borderRadius: 8, padding: 3, width: "100%", maxWidth: 340 }}>
+        {["phone", "admin"].map(m => (
+          <button key={m} onClick={() => { setMode(m); setError(""); setConfirmResult(null); }}
+            style={{ flex: 1, padding: "7px 0", border: "none", borderRadius: 6, fontWeight: 600, fontSize: 13, cursor: "pointer", background: mode === m ? "#c4a827" : "transparent", color: mode === m ? "#000" : "#666", transition: "all 120ms" }}>
+            {m === "phone" ? "Staff Login" : "Admin"}
+          </button>
+        ))}
+      </div>
+
+      {mode === "phone" ? (
+        <div style={{ width: "100%", maxWidth: 340, display: "flex", flexDirection: "column", gap: 12 }}>
+          {!confirmResult ? (
+            <form onSubmit={sendOtp} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <input type="tel" placeholder="+61 4xx xxx xxx" value={phone} onChange={e => setPhone(e.target.value)} required style={inputStyle} />
+              {error && <div style={{ color: "#f87171", fontSize: 12.5, padding: "6px 10px", background: "rgba(248,113,113,0.1)", borderRadius: 6 }}>{error}</div>}
+              <div ref={recaptchaContainerRef} />
+              <button type="submit" disabled={loading}
+                style={{ background: "#c4a827", color: "#000", border: "none", borderRadius: 8, padding: "11px 0", fontWeight: 700, fontSize: 14, cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.7 : 1 }}>
+                {loading ? "Sending…" : "Send OTP"}
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={verifyOtp} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ color: "#aaa", fontSize: 13, textAlign: "center" }}>Code sent to {phone}</div>
+              <input type="text" placeholder="Enter 6-digit code" value={otp} onChange={e => setOtp(e.target.value)} required maxLength={6} style={{ ...inputStyle, letterSpacing: 6, textAlign: "center", fontSize: 20 }} />
+              {error && <div style={{ color: "#f87171", fontSize: 12.5, padding: "6px 10px", background: "rgba(248,113,113,0.1)", borderRadius: 6 }}>{error}</div>}
+              <button type="submit" disabled={loading}
+                style={{ background: "#c4a827", color: "#000", border: "none", borderRadius: 8, padding: "11px 0", fontWeight: 700, fontSize: 14, cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.7 : 1 }}>
+                {loading ? "Verifying…" : "Verify & Sign In"}
+              </button>
+              <button type="button" onClick={() => { setConfirmResult(null); setOtp(""); setError(""); window._rcVerifier = null; }}
+                style={{ background: "none", border: "none", color: "#666", fontSize: 13, cursor: "pointer", textDecoration: "underline" }}>
+                Change number
+              </button>
+            </form>
+          )}
+        </div>
+      ) : (
+        <form onSubmit={adminLogin} style={{ display: "flex", flexDirection: "column", gap: 12, width: "100%", maxWidth: 340 }}>
+          <input type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)} required style={inputStyle} />
+          <input type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} required style={inputStyle} />
+          {error && <div style={{ color: "#f87171", fontSize: 12.5, padding: "6px 10px", background: "rgba(248,113,113,0.1)", borderRadius: 6 }}>{error}</div>}
+          <button type="submit" disabled={loading}
+            style={{ background: "#c4a827", color: "#000", border: "none", borderRadius: 8, padding: "11px 0", fontWeight: 700, fontSize: 14, cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.7 : 1 }}>
+            {loading ? "Signing in…" : "Sign in"}
+          </button>
+        </form>
+      )}
     </div>
   );
 }
 
 function AddUserModal({ onClose, onSave }) {
   const [name, setName] = React.useState("");
-  const [email, setEmail] = React.useState("");
-  const [password, setPassword] = React.useState("");
+  const [phone, setPhone] = React.useState("");
   const [role, setRole] = React.useState("user");
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState("");
 
   async function handleSave(e) {
     e.preventDefault();
-    if (!email.trim() || !password) return;
+    if (!phone.trim()) return;
     setLoading(true); setError("");
     try {
-      const secondary = firebase.initializeApp(window.FIREBASE_CONFIG, "tmp_" + Date.now());
-      const cred = await secondary.auth().createUserWithEmailAndPassword(email.trim(), password);
-      const uid = cred.user.uid;
-      await secondary.auth().signOut();
-      secondary.delete();
-      await window.db.collection("users").doc(uid).set({
-        email: email.trim(),
-        name: name.trim() || email.split("@")[0],
+      const existing = await window.db.collection("users").where("phone", "==", phone.trim()).get();
+      if (!existing.empty) { setError("This phone number is already registered."); setLoading(false); return; }
+      await window.db.collection("users").add({
+        name: name.trim() || phone.trim(),
+        phone: phone.trim(),
         role,
         disabled: false,
         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       });
       onSave();
     } catch (err) {
-      const msgs = {
-        "auth/email-already-in-use": "This email is already registered.",
-        "auth/invalid-email": "Invalid email address.",
-        "auth/weak-password": "Password must be at least 6 characters.",
-      };
-      setError(msgs[err.code] || err.message);
+      setError(err.message);
       setLoading(false);
     }
   }
@@ -2896,7 +2955,7 @@ function AddUserModal({ onClose, onSave }) {
     <div className="modal-backdrop">
       <div className="modal" style={{ maxWidth: 420 }}>
         <div className="modal-header">
-          <div className="modal-title">Add User</div>
+          <div className="modal-title">Add Staff User</div>
           <button className="btn ghost sm" onClick={onClose}><Icon name="x" size={16} /></button>
         </div>
         <form onSubmit={handleSave}>
@@ -2906,12 +2965,8 @@ function AddUserModal({ onClose, onSave }) {
               <input className="input" placeholder="Full name" value={name} onChange={e => setName(e.target.value)} />
             </div>
             <div className="field">
-              <label className="label">Email *</label>
-              <input className="input" type="email" placeholder="user@example.com" value={email} onChange={e => setEmail(e.target.value)} required />
-            </div>
-            <div className="field">
-              <label className="label">Password *</label>
-              <input className="input" type="password" placeholder="Min 6 characters" value={password} onChange={e => setPassword(e.target.value)} required minLength={6} />
+              <label className="label">Phone Number *</label>
+              <input className="input" type="tel" placeholder="+61 4xx xxx xxx" value={phone} onChange={e => setPhone(e.target.value)} required />
             </div>
             <div className="field">
               <label className="label">Role</label>
@@ -2921,10 +2976,11 @@ function AddUserModal({ onClose, onSave }) {
               </select>
             </div>
             {error && <div style={{ color: "var(--red)", fontSize: 12.5 }}>{error}</div>}
+            <div className="muted" style={{ fontSize: 11.5 }}>Staff log in via OTP sent to this number — no password needed.</div>
           </div>
           <div className="modal-footer">
             <button type="button" className="btn ghost" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn primary" disabled={loading}>{loading ? "Creating…" : "Create User"}</button>
+            <button type="submit" className="btn primary" disabled={loading}>{loading ? "Saving…" : "Add User"}</button>
           </div>
         </form>
       </div>
@@ -2946,16 +3002,18 @@ function UsersScreen({ currentUser, onToast }) {
   }, []);
 
   async function toggleDisable(u) {
-    if (u.email === currentUser?.email) { onToast({ ttl: "Cannot disable your own account" }); return; }
+    const isSelf = u.email === currentUser?.email || u.phone === currentUser?.phoneNumber;
+    if (isSelf) { onToast({ ttl: "Cannot disable your own account" }); return; }
     const next = !u.disabled;
     await window.db.collection("users").doc(u.id).update({ disabled: next });
-    onToast({ ttl: next ? "User disabled" : "User enabled", sub: u.email });
+    onToast({ ttl: next ? "User disabled" : "User enabled", sub: u.name || u.phone || u.email });
   }
 
   async function deleteUser(u) {
-    if (u.email === currentUser?.email) { onToast({ ttl: "Cannot delete your own account" }); return; }
+    const isSelf = u.email === currentUser?.email || u.phone === currentUser?.phoneNumber;
+    if (isSelf) { onToast({ ttl: "Cannot delete your own account" }); return; }
     await window.db.collection("users").doc(u.id).delete();
-    onToast({ ttl: "User deleted", sub: u.email });
+    onToast({ ttl: "User deleted", sub: u.name || u.phone || u.email });
   }
 
   return (
@@ -2974,17 +3032,19 @@ function UsersScreen({ currentUser, onToast }) {
             <thead>
               <tr>
                 <th>Name</th>
-                <th>Email</th>
+                <th>Phone / Email</th>
                 <th>Role</th>
                 <th>Status</th>
                 <th style={{ width: 120 }}></th>
               </tr>
             </thead>
             <tbody>
-              {users.map(u => (
+              {users.map(u => {
+                const isSelf = u.email === currentUser?.email || u.phone === currentUser?.phoneNumber;
+                return (
                 <tr key={u.id}>
                   <td style={{ fontWeight: 500 }}>{u.name || "—"}</td>
-                  <td className="muted">{u.email}</td>
+                  <td className="muted">{u.phone || u.email || "—"}</td>
                   <td><span className={`badge ${u.role === "admin" ? "badge-yellow" : ""}`}>{u.role || "user"}</span></td>
                   <td>
                     {u.disabled
@@ -2994,19 +3054,20 @@ function UsersScreen({ currentUser, onToast }) {
                   <td>
                     <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                       <button className="btn ghost sm" onClick={() => toggleDisable(u)}
-                        disabled={u.email === currentUser?.email}
+                        disabled={isSelf}
                         title={u.disabled ? "Enable user" : "Disable user"}>
                         {u.disabled ? "Enable" : "Disable"}
                       </button>
                       <button className="btn ghost sm" onClick={() => deleteUser(u)}
-                        disabled={u.email === currentUser?.email}
+                        disabled={isSelf}
                         style={{ color: "var(--red)" }}>
                         <Icon name="x" size={12} />
                       </button>
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

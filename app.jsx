@@ -24,6 +24,12 @@ function AppRoot() {
         if (user.email === ADMIN_EMAIL) {
           setUserRole("admin");
           window.db.collection("users").doc(user.uid).set({ email: user.email, role: "admin", name: "Admin" }, { merge: true }).catch(() => {});
+        } else if (user.phoneNumber) {
+          const snap = await window.db.collection("users").where("phone", "==", user.phoneNumber).limit(1).get();
+          if (snap.empty) { window.auth.signOut(); return; }
+          const data = snap.docs[0].data();
+          if (data.disabled) { window.auth.signOut(); return; }
+          setUserRole(data.role || "user");
         } else {
           const doc = await window.db.collection("users").doc(user.uid).get();
           const data = doc.exists ? doc.data() : {};
