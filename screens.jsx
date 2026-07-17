@@ -3026,6 +3026,12 @@ const PERMISSION_NAV = [
   { key: "users", label: "User Management (admin only)" },
 ];
 
+const CUSTOMER_PERMISSION_NAV = [
+  { key: "orders", label: "Track Orders & Deliveries" },
+  { key: "invoices", label: "View Invoices (read-only)" },
+  { key: "pod", label: "View POD History" },
+];
+
 function PermissionsPanel({ permissions, onChange }) {
   function toggle(role, key) {
     const current = permissions[role] || [];
@@ -3036,10 +3042,10 @@ function PermissionsPanel({ permissions, onChange }) {
     <div className="card" style={{ padding: 20, marginTop: 24 }}>
       <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>Access Control</div>
       <div className="muted" style={{ fontSize: 12, marginBottom: 16 }}>Configure which sections each role can access. Settings and API Integrations are always restricted to the Main Admin only.</div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 24 }}>
         {["user", "admin"].map(role => (
           <div key={role}>
-            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10, textTransform: "capitalize" }}>{role === "admin" ? "Administrator" : "User"}</div>
+            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10 }}>{role === "admin" ? "Administrator" : "User"}</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {PERMISSION_NAV.filter(n => role === "admin" || n.key !== "users").map(n => (
                 <label key={n.key} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13 }}>
@@ -3055,6 +3061,22 @@ function PermissionsPanel({ permissions, onChange }) {
             </div>
           </div>
         ))}
+        <div>
+          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10 }}>Customer Portal</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {CUSTOMER_PERMISSION_NAV.map(n => (
+              <label key={n.key} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13 }}>
+                <input
+                  type="checkbox"
+                  checked={(permissions["customer"] || []).includes(n.key)}
+                  onChange={() => toggle("customer", n.key)}
+                  style={{ accentColor: "var(--accent)", width: 15, height: 15 }}
+                />
+                {n.label}
+              </label>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -3156,8 +3178,9 @@ function UsersScreen({ currentUser, onToast, isSuperAdmin, permissions, onPermis
 
 /* ============== CUSTOMER PORTAL ============== */
 
-function CustomerPortal({ currentUser, userDoc, displayName }) {
-  const [tab, setTab] = React.useState("orders");
+function CustomerPortal({ currentUser, userDoc, displayName, permissions }) {
+  const customerPerms = (permissions && permissions["customer"]) || ["orders", "invoices", "pod"];
+  const [tab, setTab] = React.useState("new");
   const [orders, setOrders] = React.useState([]);
   const [ordersLoading, setOrdersLoading] = React.useState(true);
   const [toasts, setToasts] = React.useState([]);
@@ -3194,11 +3217,19 @@ function CustomerPortal({ currentUser, userDoc, displayName }) {
     in_transit: "In Transit", delivered: "Delivered", delayed: "Delayed",
   };
 
-  const tabs = [
-    { key: "orders", label: "My Orders" },
-    { key: "new", label: "Place Order" },
-    { key: "invoices", label: "My Invoices" },
+  const allTabs = [
+    { key: "new", label: "Place Order", always: true },
+    { key: "orders", label: "My Orders", perm: "orders" },
+    { key: "invoices", label: "My Invoices", perm: "invoices" },
+    { key: "pod", label: "POD History", perm: "pod" },
   ];
+  const visibleTabs = allTabs.filter(t => t.always || customerPerms.includes(t.perm));
+
+  React.useEffect(() => {
+    if (!visibleTabs.find(t => t.key === tab)) {
+      setTab(visibleTabs[0]?.key || "new");
+    }
+  }, [customerPerms.join(",")]);
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg-0)", display: "flex", flexDirection: "column" }}>
@@ -3214,7 +3245,7 @@ function CustomerPortal({ currentUser, userDoc, displayName }) {
       </header>
 
       <div style={{ borderBottom: "1px solid var(--bg-3)", padding: "0 24px", display: "flex", background: "var(--bg-1)" }}>
-        {tabs.map(t => (
+        {visibleTabs.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
             style={{ padding: "14px 20px", border: "none", background: "none", cursor: "pointer", fontSize: 13, fontWeight: 600,
               color: tab === t.key ? "var(--accent)" : "var(--fg-2)",
@@ -3227,8 +3258,9 @@ function CustomerPortal({ currentUser, userDoc, displayName }) {
 
       <div style={{ flex: 1, padding: 24, maxWidth: 900, width: "100%", margin: "0 auto", boxSizing: "border-box" }}>
         {tab === "orders" && <CustomerOrdersTab orders={orders} loading={ordersLoading} statusColors={statusColors} statusLabels={statusLabels} />}
-        {tab === "new" && <CustomerNewOrderTab companyName={companyName} contactName={contactName} contactPhone={contactPhone} onSubmitted={() => { setTab("orders"); pushToast({ ttl: "Order placed", sub: "We'll be in touch shortly." }); }} />}
+        {tab === "new" && <CustomerNewOrderTab companyName={companyName} contactName={contactName} contactPhone={contactPhone} onSubmitted={() => { setTab(customerPerms.includes("orders") ? "orders" : "new"); pushToast({ ttl: "Order placed", sub: "We'll be in touch shortly." }); }} />}
         {tab === "invoices" && <CustomerInvoicesTab orders={orders} loading={ordersLoading} />}
+        {tab === "pod" && <CustomerPodTab companyName={companyName} statusLabels={statusLabels} />}
       </div>
 
       <div className="toast-host">
@@ -3366,6 +3398,63 @@ function CustomerInvoicesTab({ orders, loading }) {
                 <td className="muted" style={{ fontSize: 12 }}>{o.origin} → {o.destination}</td>
                 <td><span style={{ fontSize: 12, fontWeight: 600, textTransform: "capitalize" }}>{(o.status || "").replace("_", " ")}</span></td>
                 <td style={{ fontWeight: 600 }}>{o.value}</td>
+                <td className="muted" style={{ fontSize: 12 }}>{o.eta || "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function CustomerPodTab({ companyName, statusLabels }) {
+  const [pods, setPods] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    if (!companyName) { setLoading(false); return; }
+    const unsub = window.db.collection("orders")
+      .where("customer", "==", companyName)
+      .where("status", "==", "delivered")
+      .onSnapshot(snap => {
+        const docs = snap.docs.map(d => ({ ...d.data(), id: d.id }));
+        docs.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+        setPods(docs);
+        setLoading(false);
+      }, () => setLoading(false));
+    return () => unsub();
+  }, [companyName]);
+
+  if (loading) return <div className="muted" style={{ padding: 40, textAlign: "center" }}>Loading…</div>;
+  if (!pods.length) return (
+    <div style={{ textAlign: "center", padding: 60, color: "var(--fg-3)" }}>
+      <div style={{ fontSize: 32, marginBottom: 12 }}>📋</div>
+      <div style={{ fontWeight: 600, marginBottom: 6 }}>No POD records yet</div>
+      <div style={{ fontSize: 13 }}>Proof of delivery records will appear here once your orders are delivered.</div>
+    </div>
+  );
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div className="card" style={{ overflow: "hidden" }}>
+        <table className="data-table" style={{ width: "100%" }}>
+          <thead>
+            <tr>
+              <th>Order Ref</th>
+              <th>Route</th>
+              <th>Driver</th>
+              <th>Value</th>
+              <th>ETA</th>
+            </tr>
+          </thead>
+          <tbody>
+            {pods.map(o => (
+              <tr key={o.id}>
+                <td style={{ fontWeight: 600 }}>{o.id}</td>
+                <td className="muted" style={{ fontSize: 12 }}>{o.origin} → {o.destination}</td>
+                <td style={{ fontSize: 12 }}>{o.driver || "—"}</td>
+                <td style={{ fontWeight: 600 }}>{o.value || "—"}</td>
                 <td className="muted" style={{ fontSize: 12 }}>{o.eta || "—"}</td>
               </tr>
             ))}
