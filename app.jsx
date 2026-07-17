@@ -12,8 +12,9 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
 const ADMIN_EMAIL = "rkadel1488@gmail.com";
 
 const DEFAULT_PERMISSIONS = {
-  user:  ["pod", "orders", "tracking", "fleet", "notifications", "customers", "billing"],
-  admin: ["pod", "orders", "tracking", "fleet", "notifications", "customers", "billing", "users"],
+  user:     ["pod", "orders", "tracking", "fleet", "notifications", "customers", "billing"],
+  admin:    ["pod", "orders", "tracking", "fleet", "notifications", "customers", "billing", "users"],
+  customer: ["orders", "invoices", "pod"],
 };
 
 function AppRoot() {
@@ -22,6 +23,15 @@ function AppRoot() {
   const [userRole, setUserRole] = useState(null);
   const [displayName, setDisplayName] = useState("");
   const [userDoc, setUserDoc] = useState(null);
+  const [permissions, setPermissions] = useState(DEFAULT_PERMISSIONS);
+
+  useEffect(() => {
+    const unsub = window.db.collection("settings").doc("permissions")
+      .onSnapshot(snap => {
+        if (snap.exists) setPermissions({ ...DEFAULT_PERMISSIONS, ...snap.data() });
+      }, () => {});
+    return () => unsub();
+  }, []);
 
   useEffect(() => {
     const unsub = window.auth.onAuthStateChanged(async user => {
@@ -59,7 +69,7 @@ function AppRoot() {
     </div>
   );
   if (authState === "out") return <LoginScreen />;
-  if (userRole === "customer") return <CustomerPortal currentUser={currentUser} userDoc={userDoc} displayName={displayName} />;
+  if (userRole === "customer") return <CustomerPortal currentUser={currentUser} userDoc={userDoc} displayName={displayName} permissions={permissions} />;
   return <Dashboard currentUser={currentUser} userRole={userRole} displayName={displayName} isSuperAdmin={currentUser?.email === ADMIN_EMAIL} />;
 }
 
