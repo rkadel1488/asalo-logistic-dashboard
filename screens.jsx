@@ -1628,31 +1628,98 @@ function CustomersScreen({ customers, orders, onAddCustomer, onDeleteCustomer, o
   );
 }
 
-/* ============== API ============== */
-function ApiCredentialCard({ title, subtitle, defaultEndpoint, keyPlaceholder, fields = [], initialConnected = false, onToast }) {
-  const [endpoint, setEndpoint] = React.useState(defaultEndpoint);
-  const [apiKey, setApiKey] = React.useState("");
-  const [extras, setExtras] = React.useState(() => Object.fromEntries(fields.map(f => [f.name, f.default || ""])));
-  const [show, setShow] = React.useState(false);
-  const [connected, setConnected] = React.useState(initialConnected);
-  const [testing, setTesting] = React.useState(false);
+/* ============== BACKGROUND NOTIFICATION HELPERS ============== */
 
-  function save() {
-    if (!apiKey.trim()) {
+async function sendWelcomeEmail({ toEmail, toName, companyName, password, loginUrl }) {
+  try {
+    const snap = await window.db.collection("settings").doc("email_service").get();
+    if (!snap.exists) return { ok: false, reason: "Email service not configured" };
+    const cfg = snap.data();
+    if (!cfg.serviceId || !cfg.templateId || !cfg.publicKey) return { ok: false, reason: "Incomplete EmailJS config" };
+    const res = await fetch("https://api.emailjs.com/api/v1.0/email/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        service_id: cfg.serviceId,
+        template_id: cfg.templateId,
+        user_id: cfg.publicKey,
+        template_params: {
+          to_name: toName || companyName || "Valued Customer",
+          to_email: toEmail,
+          company_name: companyName || toName || "",
+          login_identifier: toEmail,
+          password: password,
+          login_url: loginUrl,
+          sender_name: "ASALO Logistic",
+        },
+      }),
+    });
+    return { ok: res.ok, reason: res.ok ? null : `EmailJS ${res.status}` };
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+}
+
+async function sendWelcomeSMS({ toPhone, toName, companyName, password, loginUrl }) {
+  try {
+    const snap = await window.db.collection("settings").doc("sms_gateway").get();
+    if (!snap.exists) return { ok: false, reason: "SMS gateway not configured" };
+    const cfg = snap.data();
+    if (!cfg.apiKey) return { ok: false, reason: "SMS API key missing" };
+    const norm = toPhone.replace(/\s+/g, "");
+    const body = `Welcome to ASALO Logistic${companyName ? `, ${companyName}` : ""}!\n\nYour customer portal is ready.\nLogin: ${norm.startsWith("+") ? norm : toPhone}\nPassword: ${password}\nPortal: ${loginUrl}\n\nSelect the "Customer" tab to sign in. – ASALO Logistic`;
+    // ClickSend REST API (CORS-enabled)
+    const res = await fetch("https://rest.clicksend.com/v3/sms/send", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Basic " + btoa(`${cfg.username || ""}:${cfg.apiKey}`),
+      },
+      body: JSON.stringify({
+        messages: [{ source: "sdk", to: norm, body, from: cfg.sender || "ASALO" }],
+      }),
+    });
+    return { ok: res.ok, reason: res.ok ? null : `ClickSend ${res.status}` };
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+}
+
+/* ============== API ============== */
+function ApiCredentialCard({ title, subtitle, firestoreDoc, keyPlaceholder, fields = [], onToast }) {
+  const [values, setValues] = React.useState({});
+  const [show, setShow] = React.useState(false);
+  const [connected, setConnected] = React.useState(false);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    if (!firestoreDoc) { setLoading(false); return; }
+    window.db.collection("settings").doc(firestoreDoc).get().then(snap => {
+      if (snap.exists) { setValues(snap.data()); setConnected(true); }
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, [firestoreDoc]);
+
+  function setVal(k, v) { setValues(prev => ({ ...prev, [k]: v })); }
+
+  async function save() {
+    if (!values.apiKey?.trim() && !values.publicKey?.trim()) {
       onToast && onToast({ ttl: `${title}: API key required`, sub: "Paste a key to save credentials" });
       return;
     }
+    if (firestoreDoc) await window.db.collection("settings").doc(firestoreDoc).set(values, { merge: true });
     setConnected(true);
-    onToast && onToast({ ttl: `${title} credentials saved`, sub: "Stored encrypted · ready for use" });
+    onToast && onToast({ ttl: `${title} credentials saved`, sub: "Stored in Firestore · ready for use" });
   }
-  function test() {
-    if (!apiKey.trim()) { onToast && onToast({ ttl: `${title}: add an API key first`, sub: "" }); return; }
-    setTesting(true);
-    setTimeout(() => { setTesting(false); onToast && onToast({ ttl: `${title}: connection OK`, sub: "Round-trip 92ms" }); }, 800);
+
+  async function disconnect() {
+    if (firestoreDoc) await window.db.collection("settings").doc(firestoreDoc).delete();
+    setConnected(false);
+    setValues({});
+    onToast && onToast({ ttl: `${title} disconnected`, sub: "Credentials cleared" });
   }
-  function disconnect() {
-    setConnected(false); setApiKey(""); onToast && onToast({ ttl: `${title} disconnected`, sub: "Credentials cleared" });
-  }
+
+  if (loading) return <div className="panel" style={{ padding: 20, color: "var(--fg-3)", fontSize: 13 }}>Loading…</div>;
 
   return (
     <div className="panel">
@@ -1664,35 +1731,30 @@ function ApiCredentialCard({ title, subtitle, defaultEndpoint, keyPlaceholder, f
           {connected ? "Connected" : "Not configured"}
         </span>
         <div className="sp" />
-        <button className="btn sm" onClick={test} disabled={testing}>
-          <Icon name="refresh" size={12} /> {testing ? "Testing…" : "Test"}
-        </button>
       </div>
       <div className="panel-b" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        <div className="field">
-          <label>API endpoint</label>
-          <input className="mono" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} placeholder="https://…" />
-        </div>
-        <div className="field">
-          <label>API key</label>
-          <div className="row" style={{ gap: 6 }}>
-            <input className="mono" type={show ? "text" : "password"} value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)} placeholder={keyPlaceholder || "Paste API key — add later if not ready"} style={{ flex: 1 }} />
-            <button className="btn sm" onClick={() => setShow((s) => !s)}><Icon name="eye" size={12} /></button>
-          </div>
-        </div>
         {fields.map((f) => (
           <div className="field" key={f.name}>
-            <label>{f.label}</label>
-            <input className={f.mono ? "mono" : ""} value={extras[f.name]} placeholder={f.placeholder || ""}
-              onChange={(e) => setExtras((x) => ({ ...x, [f.name]: e.target.value }))} />
+            <label>{f.label}{f.required && <span style={{ color: "var(--red)", marginLeft: 3 }}>*</span>}</label>
+            <div className="row" style={{ gap: 6 }}>
+              <input
+                className={f.mono !== false ? "mono" : ""}
+                type={f.secret && !show ? "password" : "text"}
+                value={values[f.name] || ""}
+                placeholder={f.placeholder || ""}
+                onChange={e => setVal(f.name, e.target.value)}
+                style={{ flex: 1 }}
+              />
+              {f.secret && <button className="btn sm" type="button" onClick={() => setShow(s => !s)}><Icon name="eye" size={12} /></button>}
+            </div>
+            {f.hint && <div style={{ fontSize: 11, color: "var(--fg-3)", marginTop: 3 }}>{f.hint}</div>}
           </div>
         ))}
         <div className="row" style={{ gap: 8, marginTop: 4 }}>
-          <button className="btn primary sm" onClick={save}><Icon name="check" size={12} /> Save credentials</button>
+          <button className="btn primary sm" onClick={save}><Icon name="check" size={12} /> Save</button>
           {connected && <button className="btn sm danger" onClick={disconnect}><Icon name="x" size={12} /> Disconnect</button>}
           <div className="sp" style={{ flex: 1 }} />
-          <span className="muted" style={{ fontSize: 11 }}>Stored encrypted at rest</span>
+          <span className="muted" style={{ fontSize: 11 }}>Saved to Firestore</span>
         </div>
       </div>
     </div>
@@ -1702,29 +1764,43 @@ function ApiCredentialCard({ title, subtitle, defaultEndpoint, keyPlaceholder, f
 function ApiScreen({ onToast }) {
   return (
     <div className="responsive-grid" style={{ padding: 18, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+
+      {/* Email service — EmailJS */}
       <ApiCredentialCard
-        title="SMS gateway"
-        subtitle="Customer notifications · choose any provider"
-        defaultEndpoint=""
-        keyPlaceholder="Paste API key (Twilio, MessageBird, ClickSend, Vonage…)"
+        title="Email Service · EmailJS"
+        subtitle="Auto-send welcome emails to new customers"
+        firestoreDoc="email_service"
         onToast={onToast}
         fields={[
-          { name: "provider", label: "Provider", placeholder: "Twilio / MessageBird / ClickSend / Vonage / custom" },
-          { name: "sender", label: "Sender ID", placeholder: "ASALO", default: "ASALO" },
-          { name: "from", label: "From number", placeholder: "+61 4 …", mono: true },
+          { name: "publicKey", label: "EmailJS Public Key", required: true, secret: true, placeholder: "e.g. user_xxxxxxxxxxxxxxxxx", hint: "Find at emailjs.com → Account → API Keys" },
+          { name: "serviceId", label: "Service ID", required: true, placeholder: "e.g. service_xxxxxxx", hint: "Create a service (Gmail, Outlook…) in EmailJS dashboard" },
+          { name: "templateId", label: "Template ID", required: true, placeholder: "e.g. template_xxxxxxx", hint: "Create a template with variables: to_name, to_email, login_identifier, password, login_url, company_name" },
+        ]}
+      />
+
+      {/* SMS gateway — ClickSend */}
+      <ApiCredentialCard
+        title="SMS Gateway · ClickSend"
+        subtitle="Auto-send welcome SMS to new customers"
+        firestoreDoc="sms_gateway"
+        onToast={onToast}
+        fields={[
+          { name: "username", label: "ClickSend Username", required: true, placeholder: "Your ClickSend login email", hint: "Register at clicksend.com — free trial credits included" },
+          { name: "apiKey", label: "ClickSend API Key", required: true, secret: true, placeholder: "Paste your ClickSend API key", hint: "Find at clicksend.com → Dashboard → API Credentials" },
+          { name: "sender", label: "Sender ID", placeholder: "ASALO", hint: "Shown as the sender name (max 11 chars, no spaces)" },
         ]}
       />
 
       <ApiCredentialCard
         title="WhatsApp · OpenWA"
         subtitle="Customer notifications via WhatsApp Web session"
-        defaultEndpoint="http://localhost:8002/api"
-        keyPlaceholder="Paste OpenWA session API key"
+        firestoreDoc="whatsapp_owa"
         onToast={onToast}
         fields={[
-          { name: "sessionId", label: "Session ID", placeholder: "e.g. asalo-ops", mono: true },
-          { name: "from", label: "Sender number", placeholder: "+61 4 …", mono: true },
-          { name: "webhook", label: "Webhook URL", placeholder: "https://asalo.co/api/hooks/whatsapp", mono: true, default: "https://asalo.co/api/hooks/whatsapp" },
+          { name: "endpoint", label: "API endpoint", placeholder: "http://localhost:8002/api" },
+          { name: "apiKey", label: "Session API key", secret: true, placeholder: "Paste OpenWA session API key" },
+          { name: "sessionId", label: "Session ID", placeholder: "e.g. asalo-ops" },
+          { name: "from", label: "Sender number", placeholder: "+61 4 …" },
         ]}
       />
 
@@ -2963,6 +3039,7 @@ function AddUserModal({ onClose, onSave }) {
   const [company, setCompany] = React.useState("");
   const [role, setRole] = React.useState("user");
   const [loading, setLoading] = React.useState(false);
+  const [notifStatus, setNotifStatus] = React.useState(null); // null | "sending" | "sent" | "partial" | "failed"
   const [error, setError] = React.useState("");
 
   const isCustomer = role === "customer";
@@ -3007,15 +3084,19 @@ function AddUserModal({ onClose, onSave }) {
         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       });
 
-      // Send credentials automatically
+      // Send credentials automatically in the background
       if (isCustomer) {
-        const displayId = custMethod === "email" ? email.trim() : custPhone.trim();
-        const msgBody = `Welcome to ASALO Logistic! Your customer portal is ready.\n\nLogin: ${displayId}\nPassword: ${password}\nPortal: ${loginUrl}\n\nSelect the "Customer" tab to sign in.`;
+        const custName = name.trim() || company.trim() || email.trim() || custPhone.trim();
+        const companyNameFinal = company.trim() || name.trim();
+        setNotifStatus("sending");
         if (custMethod === "email") {
-          window.open(`mailto:${email.trim()}?subject=Your ASALO Logistic Portal Access&body=${encodeURIComponent(msgBody)}`);
+          const result = await sendWelcomeEmail({ toEmail: email.trim(), toName: custName, companyName: companyNameFinal, password, loginUrl });
+          setNotifStatus(result.ok ? "sent" : "failed");
+          if (!result.ok) console.warn("Welcome email failed:", result.reason);
         } else {
-          const normPhone = custPhone.replace(/\s+/g, "");
-          window.open(`sms:${normPhone}?body=${encodeURIComponent(msgBody)}`, "_self");
+          const result = await sendWelcomeSMS({ toPhone: custPhone, toName: custName, companyName: companyNameFinal, password, loginUrl });
+          setNotifStatus(result.ok ? "sent" : "failed");
+          if (!result.ok) console.warn("Welcome SMS failed:", result.reason);
         }
       }
 
@@ -3084,11 +3165,14 @@ function AddUserModal({ onClose, onSave }) {
                   <label className="label">Password *</label>
                   <input className="input" type="password" placeholder="Min 6 characters" value={password} onChange={e => setPassword(e.target.value)} required />
                 </div>
-                <div style={{ background: "var(--bg-2)", border: "1px solid var(--bg-3)", borderRadius: 8, padding: "10px 12px", fontSize: 12, color: "var(--fg-2)", lineHeight: 1.5 }}>
+                <div style={{ background: "var(--bg-2)", border: "1px solid var(--bg-3)", borderRadius: 8, padding: "10px 12px", fontSize: 12, color: "var(--fg-2)", lineHeight: 1.6 }}>
                   {custMethod === "email"
-                    ? "✉️ After saving, your email app will open to send the customer their login details automatically."
-                    : "💬 After saving, your SMS app will open to send the customer their login details automatically."}
+                    ? "✉️ A welcome email with login details will be sent automatically in the background via EmailJS. Configure EmailJS in API & Integrations."
+                    : "💬 A welcome SMS with login details will be sent automatically in the background via ClickSend. Configure ClickSend in API & Integrations."}
                 </div>
+                {notifStatus === "sending" && <div style={{ fontSize: 12, color: "var(--accent)" }}>Sending notification…</div>}
+                {notifStatus === "sent" && <div style={{ fontSize: 12, color: "var(--green)" }}>✓ Notification sent successfully</div>}
+                {notifStatus === "failed" && <div style={{ fontSize: 12, color: "var(--red)" }}>⚠ Notification failed — check API credentials in API & Integrations</div>}
               </>
             ) : (
               <>
