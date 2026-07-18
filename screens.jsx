@@ -3074,6 +3074,22 @@ function AddUserModal({ onClose, onSave }) {
       secondary.delete();
 
       const norm = (custMethod === "phone" ? custPhone : staffPhone).replace(/\s+/g, "");
+      // Derive authEmail and authPassword for later deletion
+      let authEmail, authPassword;
+      if (isCustomer) {
+        if (custMethod === "email") {
+          authEmail = email.trim();
+          authPassword = password.trim();
+        } else {
+          authEmail = `${custPhone.replace(/\s+/g, "")}@asalo.app`;
+          authPassword = password.trim();
+        }
+      } else {
+        const sp = staffPhone.replace(/\s+/g, "");
+        authEmail = `${sp}@asalo.app`;
+        authPassword = sp;
+      }
+
       await window.db.collection("users").doc(uid).set({
         name: name.trim() || email.trim() || custPhone.trim() || staffPhone.trim(),
         ...(isCustomer
@@ -3081,6 +3097,8 @@ function AddUserModal({ onClose, onSave }) {
           : { phone: staffPhone.replace(/\s+/g, "") }),
         role,
         disabled: false,
+        authEmail,
+        authPassword,
         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       });
 
@@ -3286,6 +3304,17 @@ function UsersScreen({ currentUser, onToast, isSuperAdmin, permissions, onPermis
   async function deleteUser(u) {
     const isSelf = u.email === currentUser?.email || u.phone === currentUser?.phoneNumber;
     if (isSelf) { onToast({ ttl: "Cannot delete your own account" }); return; }
+    if (u.authEmail && u.authPassword) {
+      try {
+        const secondary = firebase.initializeApp(window.FIREBASE_CONFIG, "del_" + Date.now());
+        const cred = await secondary.auth().signInWithEmailAndPassword(u.authEmail, u.authPassword);
+        await cred.user.delete();
+        await secondary.auth().signOut();
+        secondary.delete();
+      } catch (e) {
+        console.warn("Auth deletion failed:", e.message);
+      }
+    }
     await window.db.collection("users").doc(u.id).delete();
     onToast({ ttl: "User deleted", sub: u.name || u.phone || u.email });
   }
