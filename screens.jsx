@@ -412,6 +412,10 @@ function TrackingScreen({ orders, drivers, assignments, onAssign, onRemove }) {
   const [showAssign, setShowAssign] = React.useState(null);
   const [detailId, setDetailId] = React.useState(null);
   const [liveLocations, setLiveLocations] = React.useState({}); // driverId → {lat, lng, updatedAt}
+  const [linxioStatus, setLinxioStatus] = React.useState(null); // null | "connecting" | "live" | "error"
+  const [linxioVehicles, setLinxioVehicles] = React.useState([]); // [{id, regNo, label, status, lat, lng}]
+  const linxioToken = React.useRef(null);
+  const linxioInterval = React.useRef(null);
 
   const mapRef = React.useRef(null);
   const mapInst = React.useRef(null);
@@ -424,6 +428,108 @@ function TrackingScreen({ orders, drivers, assignments, onAssign, onRemove }) {
       const locs = {};
       snap.docs.forEach(d => { locs[d.id] = d.data(); });
       setLiveLocations(locs);
+    });
+    return () => unsub();
+  }, []);
+
+  // Linxio live vehicle polling
+  React.useEffect(() => {
+    let cancelled = false;
+
+    async function linxioLogin(email, password) {
+      const res = await fetch("https://api.linxio.com/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      if (!res.ok) throw new Error(`Login failed: ${res.status}`);
+      const data = await res.json();
+      return data.token;
+    }
+
+    async function fetchVehicles(token) {
+      const fields = ["id", "regNo", "defaultLabel", "status", "lat", "lng", "lastUpdate", "speed", "driver"];
+      const qs = fields.map(f => `fields[]=${f}`).join("&");
+      const res = await fetch(`https://api.linxio.com/api/vehicles/fields/json?${qs}&limit=100`, {
+        headers: { "Authorization": `Bearer ${token}` },
+      });
+      if (res.status === 401) { linxioToken.current = null; throw new Error("token_expired"); }
+      if (!res.ok) throw new Error(`Vehicles fetch failed: ${res.status}`);
+      const data = await res.json();
+      return data.data || [];
+    }
+
+    async function syncPositions(vehicles) {
+      const batch = window.db.batch();
+      vehicles.forEach(v => {
+        if (v.lat == null || v.lng == null) return;
+        const ref = window.db.collection("linxioVehicles").doc(String(v.id));
+        batch.set(ref, {
+          id: v.id,
+          regNo: v.regNo || "",
+          label: v.defaultLabel || v.regNo || String(v.id),
+          status: v.status || "unknown",
+          lat: v.lat,
+          lng: v.lng,
+          speed: v.speed || 0,
+          driver: v.driver?.name || null,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+      });
+      await batch.commit();
+    }
+
+    async function poll(email, password) {
+      try {
+        if (!linxioToken.current) {
+          linxioToken.current = await linxioLogin(email, password);
+        }
+        const vehicles = await fetchVehicles(linxioToken.current);
+        if (cancelled) return;
+        await syncPositions(vehicles);
+        setLinxioVehicles(vehicles.filter(v => v.lat != null));
+        setLinxioStatus("live");
+      } catch (e) {
+        if (cancelled) return;
+        if (e.message === "token_expired") {
+          // retry once with fresh token
+          try {
+            linxioToken.current = await linxioLogin(email, password);
+            const vehicles = await fetchVehicles(linxioToken.current);
+            if (!cancelled) { await syncPositions(vehicles); setLinxioVehicles(vehicles.filter(v => v.lat != null)); setLinxioStatus("live"); }
+          } catch { setLinxioStatus("error"); }
+        } else {
+          console.warn("Linxio poll error:", e.message);
+          setLinxioStatus("error");
+        }
+      }
+    }
+
+    async function start() {
+      const snap = await window.db.collection("settings").doc("linxio").get();
+      if (!snap.exists || cancelled) return;
+      const { email, password } = snap.data();
+      if (!email || !password) return;
+      setLinxioStatus("connecting");
+      await poll(email, password);
+      if (!cancelled) {
+        linxioInterval.current = setInterval(() => poll(email, password), 30000);
+      }
+    }
+
+    start().catch(() => setLinxioStatus("error"));
+
+    return () => {
+      cancelled = true;
+      clearInterval(linxioInterval.current);
+    };
+  }, []);
+
+  // Subscribe to Linxio vehicle positions from Firestore (written by polling above)
+  React.useEffect(() => {
+    const unsub = window.db.collection("linxioVehicles").onSnapshot(snap => {
+      const vehicles = snap.docs.map(d => d.data()).filter(v => v.lat != null && v.lng != null);
+      setLinxioVehicles(vehicles);
     });
     return () => unsub();
   }, []);
@@ -446,13 +552,29 @@ function TrackingScreen({ orders, drivers, assignments, onAssign, onRemove }) {
     return () => { map.remove(); mapInst.current = null; layersRef.current = {}; };
   }, []);
 
-  // Redraw markers & routes whenever assignments, activeId, or live locations change
+  // Redraw markers & routes whenever assignments, activeId, live locations, or Linxio vehicles change
   React.useEffect(() => {
     const map = mapInst.current;
     if (!map) return;
 
     Object.values(layersRef.current).forEach(l => { try { l.remove(); } catch(e) {} });
     layersRef.current = {};
+
+    // Draw Linxio vehicle markers
+    linxioVehicles.forEach(v => {
+      const isMoving = v.status === "online" || (v.speed && v.speed > 0);
+      const color = isMoving ? "#3b82f6" : "#6b7280";
+      const html = `<div style="
+        background:${color}; color:#fff; border:2px solid ${isMoving ? "#1d4ed8" : "#4b5563"};
+        border-radius:6px; padding:3px 8px; font-size:11px; font-weight:700;
+        white-space:nowrap; box-shadow:0 2px 8px rgba(0,0,0,0.5); font-family:monospace;
+      ">🚛 ${v.label || v.regNo}${v.speed > 0 ? ` · ${Math.round(v.speed)} km/h` : ""}</div>`;
+      const icon = L.divIcon({ className: "", html, iconSize: [null, null], iconAnchor: [40, 14] });
+      const tooltip = [v.label, v.driver && `Driver: ${v.driver}`, `Status: ${v.status}`, v.speed > 0 && `${Math.round(v.speed)} km/h`].filter(Boolean).join(" · ");
+      layersRef.current[`linxio-${v.id}`] = L.marker([v.lat, v.lng], { icon })
+        .addTo(map)
+        .bindTooltip(tooltip, { className: "leaflet-tt" });
+    });
 
     inTransit.forEach(o => {
       const progress = ORDER_PROGRESS[o.id] || 0.1;
@@ -523,7 +645,7 @@ function TrackingScreen({ orders, drivers, assignments, onAssign, onRemove }) {
           .on("click", () => { setActiveId(o.id); setShowAssign(o.id); });
       }
     });
-  }, [assignments, activeId, inTransit.length, liveLocations]);
+  }, [assignments, activeId, inTransit.length, liveLocations, linxioVehicles]);
 
   // Pan map to active shipment
   React.useEffect(() => {
@@ -562,7 +684,15 @@ function TrackingScreen({ orders, drivers, assignments, onAssign, onRemove }) {
           </div>
           <div className="row" style={{ gap: 6, marginBottom: 3 }}><span style={{ width: 8, height: 8, borderRadius: 4, background: "#c4a827" }} /> Active route</div>
           <div className="row" style={{ gap: 6, marginBottom: 3 }}><span style={{ width: 8, height: 8, borderRadius: 4, background: "#22c55e" }} /> Destination</div>
-          <div className="row" style={{ gap: 6 }}><span style={{ width: 8, height: 8, borderRadius: 4, background: "#555", border: "1px dashed #888" }} /> Unassigned</div>
+          <div className="row" style={{ gap: 6, marginBottom: 3 }}><span style={{ width: 8, height: 8, borderRadius: 4, background: "#555", border: "1px dashed #888" }} /> Unassigned</div>
+          {linxioStatus && (
+            <div className="row" style={{ gap: 6, marginTop: 6, paddingTop: 6, borderTop: "1px solid #333" }}>
+              <span style={{ width: 8, height: 8, borderRadius: 4, background: linxioStatus === "live" ? "#3b82f6" : linxioStatus === "connecting" ? "#f59e0b" : "#ef4444", flexShrink: 0 }} />
+              <span style={{ color: "var(--fg-2)", fontSize: 10 }}>
+                Linxio · {linxioStatus === "live" ? `${linxioVehicles.length} vehicles` : linxioStatus === "connecting" ? "connecting…" : "error"}
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
