@@ -1703,8 +1703,10 @@ function ApiCredentialCard({ title, subtitle, firestoreDoc, keyPlaceholder, fiel
   function setVal(k, v) { setValues(prev => ({ ...prev, [k]: v })); }
 
   async function save() {
-    if (!values.apiKey?.trim() && !values.publicKey?.trim()) {
-      onToast && onToast({ ttl: `${title}: API key required`, sub: "Paste a key to save credentials" });
+    const requiredFields = fields.filter(f => f.required);
+    const missing = requiredFields.find(f => !values[f.name]?.trim());
+    if (missing) {
+      onToast && onToast({ ttl: `${title}: ${missing.label} required`, sub: "Fill in all required fields to save" });
       return;
     }
     if (firestoreDoc) await window.db.collection("settings").doc(firestoreDoc).set(values, { merge: true });
@@ -1788,6 +1790,18 @@ function ApiScreen({ onToast }) {
           { name: "username", label: "ClickSend Username", required: true, placeholder: "Your ClickSend login email", hint: "Register at clicksend.com — free trial credits included" },
           { name: "apiKey", label: "ClickSend API Key", required: true, secret: true, placeholder: "Paste your ClickSend API key", hint: "Find at clicksend.com → Dashboard → API Credentials" },
           { name: "sender", label: "Sender ID", placeholder: "ASALO", hint: "Shown as the sender name (max 11 chars, no spaces)" },
+        ]}
+      />
+
+      {/* Vehicle tracking — Linxio */}
+      <ApiCredentialCard
+        title="Vehicle Tracking · Linxio"
+        subtitle="Real-time GPS tracking for your fleet via Linxio API"
+        firestoreDoc="linxio"
+        onToast={onToast}
+        fields={[
+          { name: "email", label: "Linxio Login Email", required: true, placeholder: "user@example.com", hint: "The Linxio account email — OTP must be disabled for this role" },
+          { name: "password", label: "Linxio Password", required: true, secret: true, placeholder: "Your Linxio password", hint: "Used to obtain a Bearer token from api.linxio.com/api/login" },
         ]}
       />
 
